@@ -1,0 +1,3766 @@
+<!DOCTYPE html>
+<!--
+  AES Again - Advanced Encryption Standard Web Application
+  A comprehensive client-side AES encryption/decryption tool with multiple cipher modes,
+  password-based key derivation, user authentication, and SQLite database storage.
+  
+  Features:
+  - Multiple AES modes: ECB, CBC, CFB, OFB, CTR
+  - Password-based key derivation using PBKDF2
+  - User authentication with email verification
+  - SQLite database for data persistence
+  - File batch processing
+  - History tracking
+  - Dark mode support
+-->
+<html lang="en">
+<head>
+<!-- Meta tags for proper character encoding and responsive design -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AES Again</title>
+
+<!-- External font imports: Inter for UI text, JetBrains Mono for code/hex display -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+<!-- External JavaScript libraries -->
+<!-- CryptoJS: Provides AES encryption/decryption functionality -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+<!-- JSZip: For creating ZIP archives when processing multiple files -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<!-- jsPDF: For generating PDF files from output -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<!-- SQL.js: SQLite compiled to WebAssembly for browser-based database -->
+<script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js"></script>
+<!-- EmailJS: For sending verification emails -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<style>
+/* ============================================
+   CSS VARIABLES - THEME SYSTEM
+   ============================================
+   CSS custom properties (variables) for theming.
+   These allow easy switching between light and dark modes.
+   All color values use HSL (Hue, Saturation, Lightness) for easy manipulation.
+*/
+:root {
+  /* Primary color scheme - Blue tones for main actions and highlights */
+  --primary: hsl(200, 95%, 45%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(195, 100%, 35%);
+  
+  /* Background and foreground colors for light mode */
+  --background: hsl(210, 40%, 98%);
+  --foreground: hsl(222, 47%, 11%);
+  
+  /* Card styling - containers and panels */
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(222, 47%, 11%);
+  
+  /* Muted colors for secondary text and backgrounds */
+  --muted: hsl(210, 40%, 96%);
+  --muted-foreground: hsl(215, 16%, 47%);
+  
+  /* Border color for dividers and input fields */
+  --border: hsl(214, 32%, 91%);
+  
+  /* Accent color - complementary to primary */
+  --accent: hsl(185, 85%, 55%);
+  
+  /* Design tokens */
+  --radius: 0.75rem; /* Border radius for rounded corners */
+  --shadow-card: 0 4px 24px hsl(222, 47%, 11% / 0.08); /* Subtle shadow for cards */
+  --shadow-glow: 0 0 40px hsl(200, 95%, 45% / 0.3); /* Glow effect for primary buttons */
+}
+
+/* Dark theme overrides - activated when [data-theme="dark"] attribute is set on html element */
+[data-theme="dark"] {
+  /* Brighter primary colors for dark backgrounds */
+  --primary: hsl(200, 95%, 55%);
+  --primary-foreground: hsl(222, 47%, 7%);
+  --secondary: hsl(195, 100%, 45%);
+  
+  /* Dark background with light text */
+  --background: hsl(222, 47%, 7%);
+  --foreground: hsl(210, 40%, 98%);
+  
+  /* Dark cards */
+  --card: hsl(222, 47%, 10%);
+  --card-foreground: hsl(210, 40%, 98%);
+  
+  /* Dark muted colors */
+  --muted: hsl(217, 33%, 17%);
+  --muted-foreground: hsl(215, 20%, 65%);
+  --border: hsl(217, 33%, 17%);
+  
+  /* Brighter accent for dark mode */
+  --accent: hsl(185, 85%, 65%);
+  
+  /* Stronger shadows for dark mode (more contrast needed) */
+  --shadow-card: 0 4px 24px hsl(0, 0%, 0% / 0.5);
+  --shadow-glow: 0 0 40px hsl(200, 95%, 55% / 0.4);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: linear-gradient(135deg, var(--background) 0%, hsl(200, 95%, 45% / 0.05) 100%);
+  color: var(--foreground);
+  min-height: 100vh;
+  line-height: 1.6;
+  transition: background 0.3s, color 0.3s;
+}
+
+[data-theme="dark"] body {
+  background: linear-gradient(135deg, var(--background) 0%, hsl(200, 95%, 55% / 0.1) 100%);
+}
+
+/* Header */
+header {
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  transition: background 0.3s, border-color 0.3s;
+}
+
+[data-theme="dark"] header {
+  background: rgba(34, 39, 46, 0.8);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.header-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header-nav {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.header-nav button {
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.header-nav button:hover {
+  background: var(--muted);
+  color: var(--foreground);
+  border-color: var(--primary);
+}
+
+.header-nav button.active {
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: white;
+  border-color: transparent;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.shield-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 24px;
+  box-shadow: var(--shadow-glow);
+  transition: transform 0.2s;
+}
+
+.shield-icon:hover {
+  transform: scale(1.05);
+}
+
+.header-title h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0;
+}
+
+.brand-gradient-text {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+  display: inline-block;
+}
+
+.header-title p {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  font-weight: 500;
+  margin: 0;
+}
+
+.modes-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 999px;
+  background: hsl(200, 95%, 45% / 0.1);
+  border: 1px solid hsl(200, 95%, 45% / 0.2);
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+/* Hero Section */
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding: 3rem 1.5rem 2rem;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, hsl(200, 95%, 45% / 0.1), hsl(185, 85%, 55% / 0.1));
+  opacity: 0.5;
+}
+
+.hero-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.hero h2 {
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: var(--foreground);
+}
+
+[data-theme="dark"] .hero h2 {
+  color: var(--foreground);
+}
+
+.hero .btn-outline {
+  border-color: var(--primary);
+}
+
+.hero .btn-outline:hover {
+  background: hsla(200, 95%, 45%, 0.08);
+  border-color: var(--primary);
+}
+
+[data-theme="dark"] .hero .btn-outline:hover {
+  background: hsla(200, 95%, 55%, 0.2);
+}
+
+.hero p {
+  font-size: 1.125rem;
+  color: var(--muted-foreground);
+  max-width: 800px;
+  margin: 0 auto 1.5rem;
+}
+
+[data-theme="dark"] .hero p {
+  color: var(--muted-foreground);
+}
+
+.hero-features {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.hero-feature {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.hero-feature-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--primary);
+}
+
+/* Main Container */
+.main-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 1024px) {
+  .main-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Configuration Panel */
+.config-panel {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-card);
+  position: sticky;
+  top: 100px;
+  height: fit-content;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+.config-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.config-header h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.config-section {
+  margin-bottom: 1.5rem;
+}
+
+.config-section:last-child {
+  margin-bottom: 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--foreground);
+  margin-bottom: 0.5rem;
+}
+
+select, input[type="text"], input[type="email"], input[type="password"] {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--muted);
+  font-family: inherit;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+}
+
+select:focus, input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px hsl(200, 95%, 45% / 0.1);
+}
+
+input.mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8125rem;
+}
+
+.key-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.key-actions button {
+  flex: 1;
+  font-size: 0.75rem;
+  padding: 0.5rem;
+}
+
+.demo-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.checkbox-wrapper input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+/* Buttons */
+.btn {
+  appearance: none;
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  padding: 0.625rem 1rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: white;
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 0.9375rem;
+  box-shadow: var(--shadow-glow);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 50px hsl(200, 95%, 45% / 0.4);
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--foreground);
+}
+
+.btn-outline:hover {
+  background: var(--muted);
+  border-color: var(--primary);
+}
+
+.btn-sm {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.action-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+/* Content Panel */
+.content-panel {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-card);
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+.textarea-wrapper {
+  margin-bottom: 1.5rem;
+}
+
+textarea {
+  width: 100%;
+  min-height: 200px;
+  padding: 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8125rem;
+  resize: vertical;
+  transition: all 0.2s;
+}
+
+textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px hsl(200, 95%, 45% / 0.1);
+}
+
+textarea.output {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.section {
+  display: none;
+}
+
+.section.active {
+  display: block;
+}
+
+.copy-btn {
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  border: none;
+  color: white;
+  font-weight: 600;
+  box-shadow: var(--shadow-glow);
+}
+
+
+.copy-btn.copied {
+  background: hsl(142, 76%, 36%);
+}
+
+.copy-btn-small {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  border: none;
+  color: white;
+  font-weight: 600;
+  border-radius: calc(var(--radius) - 2px);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: all 0.2s;
+}
+
+.copy-btn-small:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 0 20px hsl(200, 95%, 45% / 0.3);
+}
+
+.copy-btn-small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.copy-btn-small.copied {
+  background: hsl(142, 76%, 36%);
+}
+
+.copy-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.copy-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 0 50px hsl(200, 95%, 45% / 0.4);
+}
+
+/* File Panel */
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 2rem;
+  text-align: center;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  margin-bottom: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.drop-zone:hover {
+  border-color: var(--primary);
+  background: hsl(200, 95%, 45% / 0.05);
+}
+
+.file-list {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.file-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: var(--muted);
+  border-radius: calc(var(--radius) - 2px);
+  font-size: 0.875rem;
+}
+
+/* History Dialog */
+.history-dialog {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.history-dialog.active {
+  display: flex;
+}
+
+.history-content {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+.history-item {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.2s;
+  word-break: break-all;
+  font-size: 0.8125rem;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.history-item:hover {
+  background: var(--muted);
+}
+
+.history-item:last-child {
+  border-bottom: none;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  background: hsl(222, 47%, 11%);
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: calc(var(--radius) - 2px);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.25s;
+  z-index: 1000;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+[data-theme="dark"] .toast {
+  background: hsl(222, 47%, 20%);
+}
+
+/* Feature Boxes */
+.feature-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-card);
+  transition: all 0.2s;
+}
+
+.feature-box h3 {
+  color: var(--foreground);
+}
+
+.feature-box p {
+  color: var(--muted-foreground);
+}
+
+.feature-box:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px hsl(222, 47%, 11% / 0.12);
+}
+
+[data-theme="dark"] .feature-box:hover {
+  box-shadow: 0 8px 32px hsl(0, 0%, 0% / 0.6);
+}
+
+[data-theme="dark"] .feature-box h3 {
+  color: var(--foreground);
+}
+
+[data-theme="dark"] .feature-box p {
+  color: var(--muted-foreground);
+}
+
+/* Theme Toggle */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.theme-toggle:hover {
+  background: var(--muted);
+  border-color: var(--primary);
+}
+
+[data-theme="dark"] .theme-toggle {
+  color: var(--foreground);
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(8px);
+  margin-top: 4rem;
+  padding: 1.5rem;
+  text-align: center;
+  transition: background 0.3s;
+}
+
+[data-theme="dark"] footer {
+  background: rgba(34, 39, 46, 0.5);
+}
+
+footer p {
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+/* Error Messages */
+.error-msg {
+  display: none;
+  color: hsl(0, 84%, 60%);
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.error-msg.show {
+  display: block;
+}
+
+/* Icons */
+.icon {
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .header-container {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+  
+  .header-container > div:last-child {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .modes-badge {
+    display: none;
+  }
+  
+  .header-nav {
+    width: 100%;
+    flex-direction: column;
+  }
+  
+  .header-nav button {
+    width: 100%;
+  }
+  
+  .hero {
+    padding: 2rem 1rem 1.5rem;
+  }
+  
+  .main-container {
+    padding: 1rem;
+  }
+  
+  .config-panel {
+    position: static;
+    max-height: none;
+  }
+}
+</style>
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <div class="header-container">
+      <div class="header-brand">
+        <div class="shield-icon">🛡️</div>
+        <div class="header-title">
+          <h1>AES Again</h1>
+      </div>
+    </div>
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <div class="modes-badge">
+          ECB • CBC • CFB • OFB • CTR
+    </div>
+        <div class="header-nav" id="mainNav" style="display: none;">
+          <button id="nav-home" onclick="showPage('home')">Home</button>
+          <button id="nav-tour" onclick="showPage('tour')">How it works</button>
+          <button id="nav-app" onclick="showPage('app')">Get Started</button>
+          <button id="nav-logout" onclick="handleLogout()">Logout</button>
+  </div>
+        <button class="theme-toggle" id="themeToggle" onclick="toggleDarkMode()" style="padding: 0.5rem; background: transparent; border: 1px solid var(--border); border-radius: calc(var(--radius) - 2px); cursor: pointer; font-size: 1.25rem; margin-left: 0.5rem;">🌙</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Sections -->
+  <div id="home" class="section">
+    <!-- Hero Section -->
+    <div class="hero">
+      <div class="hero-content">
+        <h2 class="brand-gradient-text">Enterprise-Grade AES Encryption</h2>
+        <p>Secure your sensitive data with advanced AES-256 encryption. Support for multiple cipher modes, batch file processing, and customizable configurations.</p>
+        <div class="hero-features">
+          <div class="hero-feature">
+            <span class="hero-feature-icon">🔒</span>
+            <span>AES-256 Encryption</span>
+            </div>
+          <div class="hero-feature">
+            <span class="hero-feature-icon">🔑</span>
+            <span>5 Cipher Modes</span>
+          </div>
+          <div class="hero-feature">
+            <span class="hero-feature-icon">📁</span>
+            <span>Batch Processing</span>
+        </div>
+        </div>
+        <div style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+          <button class="btn btn-primary" onclick="showPage('app')" style="width: auto; padding: 0.875rem 2rem;">
+            Get Started
+          </button>
+          <button class="btn btn-outline" onclick="showPage('tour')" style="width: auto; padding: 0.875rem 2rem;">
+            <span class="brand-gradient-text">How it Works</span>
+          </button>
+      </div>
+        </div>
+      </div>
+
+    <!-- Home Content -->
+    <div style="max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-top: 2rem;">
+        <div class="feature-box">
+          <h3 style="margin-bottom: 0.5rem; font-size: 1.125rem; font-weight: 600;">Beautiful & Fast</h3>
+          <p style="color: var(--muted-foreground); font-size: 0.875rem; margin: 0;">Clean interface with instant AES results for short messages or larger text files.</p>
+        </div>
+        <div class="feature-box">
+          <h3 style="margin-bottom: 0.5rem; font-size: 1.125rem; font-weight: 600;">Text + Batch Files</h3>
+          <p style="color: var(--muted-foreground); font-size: 0.875rem; margin: 0;">Encrypt or decrypt single text inputs or drag and drop multiple files and download a single zip output.</p>
+        </div>
+        <div class="feature-box">
+          <h3 style="margin-bottom: 0.5rem; font-size: 1.125rem; font-weight: 600;">Copy-Friendly</h3>
+          <p style="color: var(--muted-foreground); font-size: 0.875rem; margin: 0;">Export results as text, hex or Base64 and copy them with a single click.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tour Section -->
+  <div id="tour" class="section">
+    <div style="max-width: 1000px; margin: 0 auto; padding: 2rem 1.5rem;">
+      <div class="content-panel">
+        <h2 style="font-size: 1.875rem; margin-bottom: 1.5rem;">How it works</h2>
+        <div style="line-height: 1.8; color: var(--muted-foreground);">
+          <div style="margin-bottom: 1.5rem;">
+            <h3 style="color: var(--foreground); font-size: 1.125rem; margin-bottom: 0.5rem;">1) Pick a mode and operation</h3>
+            <p style="margin: 0.25rem 0;"><b>ECB:</b> Encrypts each 16-byte block separately. Simple to understand, but patterns in the plaintext stay visible in the ciphertext. Use only for testing and learning, not for real security.</p>
+            <p style="margin: 0.25rem 0;"><b>CBC:</b> Each block is combined with the previous ciphertext block, then encrypted. This hides patterns much better than ECB. Decryption needs the same key and the same initial value as encryption.</p>
+            <p style="margin: 0.25rem 0;"><b>CFB:</b> Turns AES into a stream-like mode. Works for any text length, not only multiples of 16 bytes. Suitable when you want to process data in chunks, such as streaming input.</p>
+            <p style="margin: 0.25rem 0;"><b>OFB:</b> Generates a keystream from AES and XORs it with the data. Bit errors in the ciphertext do not spread to many bytes in the plaintext. Often used when you want predictable error behaviour.</p>
+            <p style="margin: 0.25rem 0;"><b>CTR:</b> Uses a counter with AES to build a fast keystream. Very efficient and easy to parallelize. The counter value must be unique for each run with the same key to stay secure.</p>
+          </div>
+          <div style="margin-bottom: 1.5rem;">
+            <h3 style="color: var(--foreground); font-size: 1.125rem; margin-bottom: 0.5rem;">2) Enter the key and IV / counter</h3>
+            <p style="margin: 0.25rem 0;">- Key must be in hex with length 32, 48, or 64 characters (128, 192, or 256 bits).</p>
+            <p style="margin: 0.25rem 0;">- For CBC, CFB, and OFB you can optionally enter a 32-character hex IV.</p>
+            <p style="margin: 0.25rem 0;">- For CTR you can enter a 32-character hex counter value.</p>
+            <p style="margin: 0.25rem 0;">- If IV or counter is left empty, the app uses all-zero bytes for demonstration. This is convenient for testing but is not secure in real-world use.</p>
+          </div>
+          <div style="margin-bottom: 1.5rem;">
+            <h3 style="color: var(--foreground); font-size: 1.125rem; margin-bottom: 0.5rem;">3) Choose the output format</h3>
+            <p style="margin: 0.25rem 0;">- <b>Text:</b> Interpret the result as UTF-8 text. Best when you expect readable characters.</p>
+            <p style="margin: 0.25rem 0;">- <b>HEX:</b> Show the raw bytes as hexadecimal. This is the safest format to copy into reports or other tools.</p>
+            <p style="margin: 0.25rem 0;">- <b>Base64:</b> Compact text encoding, useful for URLs, JSON, or configuration files.</p>
+          </div>
+          <div style="margin-bottom: 1.5rem;">
+            <h3 style="color: var(--foreground); font-size: 1.125rem; margin-bottom: 0.5rem;">4) Provide your input</h3>
+            <p style="margin: 0.25rem 0;">- In the <b>Text</b> tab, type or paste the plaintext or ciphertext.</p>
+            <p style="margin: 0.25rem 0;">- In the <b>File</b> tab, drop one or more files. The app processes the file content using the chosen mode, key, and output format.</p>
+          </div>
+          <div style="margin-bottom: 1.5rem;">
+            <h3 style="color: var(--foreground); font-size: 1.125rem; margin-bottom: 0.5rem;">5) Run and review</h3>
+            <p style="margin: 0.25rem 0;">- Press <b>Run</b> to start encryption or decryption.</p>
+            <p style="margin: 0.25rem 0;">- View the result, copy it, or download it.</p>
+            <p style="margin: 0.25rem 0;">- Use the <b>History</b> and statistics sections to see how many runs you performed and quickly repeat recent settings.</p>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="showPage('app')" style="margin-top: 1.5rem;">
+          Got it — Get Started
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Section -->
+  <div id="app" class="section">
+  <!-- Main Container -->
+  <div class="main-container">
+    <!-- Configuration Panel -->
+    <div class="config-panel">
+      <div class="config-header">
+        <span>⚙️</span>
+        <h2>Configuration</h2>
+      </div>
+
+      <div class="config-section">
+        <label class="label">Mode</label>
+        <select id="mode">
+          <option value="ecb">ECB</option>
+          <option value="cbc">CBC</option>
+          <option value="cfb">CFB</option>
+          <option value="ofb" selected>OFB</option>
+          <option value="ctr">CTR</option>
+        </select>
+      </div>
+
+      <div class="config-section">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div>
+            <label class="label">Operation</label>
+            <select id="op">
+              <option value="enc">Encrypt</option>
+              <option value="dec">Decrypt</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Output Format</label>
+            <select id="outFmt">
+              <option value="text">Text</option>
+              <option value="hex">Hex</option>
+              <option value="base64" selected>Base64</option>
+            </select>
+        </div>
+        </div>
+        </div>
+
+      <div class="config-section">
+        <label class="label">Key Type</label>
+        <select id="keyType" style="margin-bottom: 0.75rem;">
+          <option value="hex">Hex Key</option>
+          <option value="password">Password</option>
+        </select>
+        
+        <!-- Hex Key Input -->
+        <div id="hexKeySection">
+          <label class="label" style="margin-top: 0;">Key (Hex)</label>
+          <input type="text" id="key" class="mono" placeholder="Enter hex key..." value="0000000000000000">
+          <div id="keyErr" class="error-msg">Key length must be 16/24/32 bytes hex.</div>
+          <div class="key-actions">
+            <button class="btn btn-outline btn-sm" id="genKey">Generate Random</button>
+            <button class="btn btn-outline btn-sm" id="saveKey">Save Key</button>
+          </div>
+          <select id="savedKeys" class="key-actions" style="margin-top: 0.5rem; width: 100%;">
+            <option value="">Load saved key...</option>
+          </select>
+        </div>
+        
+        <!-- Password Input -->
+        <div id="passwordKeySection" style="display: none;">
+          <label class="label" style="margin-top: 0;">Password</label>
+          <input type="password" id="passwordKey" placeholder="Enter your password..." style="font-family: inherit;">
+          <div id="passwordKeyErr" class="error-msg">Password is required.</div>
+          <p style="font-size: 0.75rem; color: var(--muted-foreground); margin-top: 0.5rem; margin-bottom: 0;">
+            Your password will be converted to a 256-bit key using PBKDF2
+          </p>
+        </div>
+        </div>
+
+      <div class="config-section" id="ctrSection" style="display: none;">
+        <label class="label">Counter (CTR, 16 bytes hex)</label>
+        <input type="text" id="ctr" class="mono" placeholder="Enter counter...">
+        <div id="ctrErr" class="error-msg">CTR must be 16 bytes hex.</div>
+        <div class="key-actions">
+          <button class="btn btn-outline btn-sm" id="genCtr">Generate Random</button>
+          <button class="btn btn-outline btn-sm" id="saveCtr">Save Counter</button>
+        </div>
+        <select id="savedCtrs" class="key-actions" style="margin-top: 0.5rem; width: 100%;">
+          <option value="">Load saved counter...</option>
+          </select>
+        </div>
+
+      <div class="config-section" id="ivSection">
+        <label class="label">IV (zeros for <span id="ivModeLabel">OFB</span>)</label>
+        <input type="text" id="iv" class="mono" placeholder="Enter IV..." value="00000000000000">
+        <div id="ivErr" class="error-msg">IV must be 16 bytes hex.</div>
+          </div>
+
+      <div class="config-section">
+        <label class="label">Quick Demos</label>
+        <div class="demo-buttons">
+          <button class="btn btn-outline btn-sm" onclick="loadDemo('cbc')">CBC</button>
+          <button class="btn btn-outline btn-sm" onclick="loadDemo('ctr')">CTR</button>
+          <button class="btn btn-outline btn-sm" onclick="loadDemo('ofb')">OFB</button>
+        </div>
+        </div>
+
+      <div class="config-section">
+        <div class="checkbox-wrapper">
+          <input type="checkbox" id="autoHex" checked>
+          <label for="autoHex" class="label" style="margin: 0; cursor: pointer;">Auto-detect hex</label>
+        </div>
+        </div>
+
+      <div class="config-section">
+        <button class="btn btn-primary" id="runBtn">
+          <span>▶</span>
+          Run
+        </button>
+        <div class="action-buttons" style="margin-top: 0.75rem;">
+          <button class="btn btn-outline btn-sm" id="downloadBtn">
+            <span>⬇</span>
+            Download
+          </button>
+          <button class="btn btn-outline btn-sm" id="saveConfigBtn">
+            <span>💾</span>
+            Save Config
+          </button>
+        </div>
+        <div class="action-buttons" style="margin-top: 0.5rem;">
+          <button class="btn btn-outline btn-sm" id="historyBtn" style="width: 100%;">
+            <span>🔄</span>
+            History
+          </button>
+        </div>
+        </div>
+      </div>
+
+    <!-- Content Panel -->
+    <div class="content-panel">
+        <div class="tabs">
+        <button class="tab active" data-tab="text">
+          <span>📄</span>
+          Text
+        </button>
+        <button class="tab" data-tab="file">
+          <span>📁</span>
+          File
+        </button>
+        </div>
+
+      <div id="textTab" class="tab-content active">
+        <div class="textarea-wrapper">
+          <label class="label">Input</label>
+          <textarea id="input" placeholder="Enter text to encrypt or encrypted text to decrypt..."></textarea>
+        </div>
+        <div class="textarea-wrapper">
+          <label class="label">Output</label>
+          <textarea id="output" class="output" placeholder="Output will appear here..." readonly></textarea>
+          <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
+            <button class="copy-btn" id="copyBtnBottom" style="flex: 1;">
+              <span>📋</span>
+              Copy Output
+            </button>
+            <button class="copy-btn" id="downloadPdfBtnBottom" style="flex: 1; background: linear-gradient(135deg, hsl(200, 95%, 45%), hsl(185, 85%, 55%));">
+              <span>📄</span>
+              Download PDF
+            </button>
+          </div>
+          </div>
+          </div>
+
+      <div id="fileTab" class="tab-content">
+        <div class="drop-zone" id="dropZone">
+          <p>Drag & drop files here or click to browse</p>
+        </div>
+        <input type="file" id="filePicker" multiple style="display: none;">
+        <div class="file-list" id="fileList"></div>
+        <div style="margin-top: 1rem;">
+          <button class="btn btn-primary" id="processFiles" style="display: none;">Process Files</button>
+          <button class="btn btn-outline" id="downloadZip" style="display: none; margin-top: 0.5rem;">Download ZIP</button>
+        </div>
+      </div>
+        </div>
+      </div>
+    </div>
+
+  <!-- History Dialog -->
+  <div class="history-dialog" id="historyDialog">
+    <div class="history-content">
+      <h3 style="margin-bottom: 1rem;">History</h3>
+      <div id="historyList"></div>
+      <button class="btn btn-outline" onclick="closeHistory()" style="margin-top: 1rem; width: 100%;">Close</button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Login/Signup Section -->
+  <div id="login" class="section active">
+    <div style="max-width: 450px; margin: 4rem auto; padding: 2rem 1.5rem;">
+      <div class="content-panel">
+        <div id="loginForm">
+          <h2 style="font-size: 1.875rem; margin-bottom: 0.5rem; text-align: center;">Log In</h2>
+          <p style="text-align: center; color: var(--muted-foreground); margin-bottom: 2rem; font-size: 0.875rem;">Welcome back to AES Again</p>
+          
+          <div class="config-section">
+            <label class="label">Email</label>
+            <input type="email" id="loginEmail" placeholder="Enter your email">
+</div>
+
+          <div class="config-section">
+            <label class="label">Password</label>
+            <input type="password" id="loginPassword" placeholder="Enter your password">
+          </div>
+          
+          <div class="config-section">
+            <button class="btn btn-primary" onclick="handleLogin()" style="width: 100%;">
+              Log In
+            </button>
+            <p style="text-align: center; margin-top: 1rem; font-size: 0.875rem; color: var(--muted-foreground);">
+              Don't have an account? <a href="#" onclick="showSignup(); return false;" style="color: var(--primary); cursor: pointer; text-decoration: none;">Sign up</a>
+            </p>
+  </div>
+</div>
+        
+        <div id="signupForm" style="display: none;">
+          <h2 style="font-size: 1.875rem; margin-bottom: 0.5rem; text-align: center;">Sign Up</h2>
+          <p style="text-align: center; color: var(--muted-foreground); margin-bottom: 2rem; font-size: 0.875rem;">Create your account to get started</p>
+          
+          <!-- Step 1: Email Verification -->
+          <div id="signupStep1">
+            <div class="config-section">
+              <label class="label">Name</label>
+              <input type="text" id="signupName" placeholder="Enter your name">
+            </div>
+            
+            <div class="config-section">
+              <label class="label">Email</label>
+              <input type="email" id="signupEmail" placeholder="Enter your email">
+              <div id="signupEmailErr" class="error-msg"></div>
+            </div>
+            
+            <div class="config-section">
+              <button class="btn btn-primary" onclick="sendEmailVerification()" style="width: 100%;">
+                Send Verification Code
+              </button>
+              <p style="text-align: center; margin-top: 1rem; font-size: 0.875rem; color: var(--muted-foreground);">
+                Already have an account? <a href="#" onclick="showLogin(); return false;" style="color: var(--primary); cursor: pointer; text-decoration: none;">Log in</a>
+              </p>
+            </div>
+          </div>
+          
+          <!-- Step 2: Password Setup (shown after email verification) -->
+          <div id="signupStep2" style="display: none;">
+            <div class="config-section">
+              <label class="label">Password</label>
+              <input type="password" id="signupPassword" placeholder="Create a password">
+              <div id="signupPasswordErr" class="error-msg"></div>
+              <p style="font-size: 0.75rem; color: var(--muted-foreground); margin-top: 0.5rem; margin-bottom: 0;">
+                Password must be at least 8 characters, include one capital letter, and one special character (!@#$%^&*)
+              </p>
+            </div>
+            
+            <div class="config-section">
+              <button class="btn btn-primary" onclick="completeSignup()" style="width: 100%;">
+                Complete Sign Up
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Email Verification Section (for signup) -->
+  <div id="verification" class="section">
+    <div style="max-width: 450px; margin: 4rem auto; padding: 2rem 1.5rem;">
+      <div class="content-panel">
+        <h2 style="font-size: 1.875rem; margin-bottom: 0.5rem; text-align: center;">Verify Your Email</h2>
+        <p style="text-align: center; color: var(--muted-foreground); margin-bottom: 2rem; font-size: 0.875rem;">
+          We've sent a verification code to <strong id="verificationEmailDisplay"></strong>. Please enter it below to continue.
+        </p>
+        
+        <!-- Display code for demo/testing (when email not configured) -->
+        <div id="verificationCodeDisplay" style="display: none; background: var(--muted); border: 2px solid var(--primary); border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1.5rem; text-align: center;">
+          <p style="font-size: 0.875rem; color: var(--muted-foreground); margin-bottom: 0.5rem;">📧 Email service not configured. Your verification code is:</p>
+          <div style="font-size: 2rem; font-weight: 700; color: var(--primary); font-family: 'JetBrains Mono', monospace; letter-spacing: 0.5rem;" id="displayedCode"></div>
+          <p style="font-size: 0.75rem; color: var(--muted-foreground); margin-top: 0.5rem;">(Configure EmailJS to receive codes via email)</p>
+        </div>
+        
+        <div class="config-section">
+          <label class="label">Verification Code</label>
+          <input type="text" id="verificationCode" placeholder="Enter 6-digit code" maxlength="6" style="text-align: center; font-size: 1.5rem; letter-spacing: 0.5rem;">
+          <div id="verificationErr" class="error-msg"></div>
+        </div>
+        
+        <div class="config-section">
+          <button class="btn btn-primary" onclick="verifyEmailForSignup()" id="verifyEmailBtn" style="width: 100%;">
+            Verify Email
+          </button>
+          <button class="btn btn-outline" onclick="resendVerificationCode()" style="width: 100%; margin-top: 0.5rem;">
+            Resend Code
+          </button>
+          <p style="text-align: center; margin-top: 1rem; font-size: 0.875rem; color: var(--muted-foreground);">
+            Didn't receive the code? Check your spam folder or click "Resend Code"
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <p>All encryption is performed locally in your browser. Your data never leaves your device.</p>
+    <p style="margin-top: 0.5rem; font-size: 0.75rem;">Made by Sleiman Koumaira, Ahmad Karnib, Sidra Smadi, and Khalil Ayoub</p>
+  </footer>
+
+<script>
+/* ============================================
+   AES AGAIN - MAIN JAVASCRIPT APPLICATION
+   ============================================
+   
+   This is a comprehensive client-side AES encryption/decryption application.
+   All code is organized into logical sections:
+   
+   CODE ORGANIZATION:
+   1. SQLite Database Management
+      - Database initialization and persistence via IndexedDB
+      - Table creation and schema management
+      - User data, history, saved keys, counters, configs storage
+   
+   2. Cryptographic Helper Functions
+      - Password-based key derivation (PBKDF2) for user-friendly passwords
+      - Hex/Base64/Text format conversions
+      - AES encryption/decryption with multiple modes (ECB, CBC, CFB, OFB, CTR)
+      - Padding and unpadding for block cipher operations
+      - Data format conversions (Uint8Array <-> CryptoJS WordArray)
+   
+   3. UI Management & Event Handlers
+      - DOM element references and caching
+      - Form validation and error display
+      - Toast notification system
+      - Tab navigation (Text/File)
+      - Key type toggle (Hex/Password)
+      - Mode-specific UI (IV/CTR sections)
+   
+   4. User Authentication System
+      - Login/signup with email verification
+      - Password validation (strength requirements)
+      - Session management via localStorage
+      - Email verification flow (3-step signup process)
+   
+   5. Encryption/Decryption Operations
+      - Text input processing (with auto hex detection)
+      - Batch file processing (multiple files → ZIP)
+      - Output formatting (Text, Hex, Base64)
+      - Operation history tracking
+      - Configuration saving/loading
+   
+   6. File Handling System
+      - Drag and drop file selection
+      - File reading and binary processing
+      - ZIP archive generation for batch results
+      - File download functionality
+   
+   7. Page Navigation & Routing
+      - Multi-page application (Home, How it Works, App, Login, Verification)
+      - Access control (login and verification required)
+      - Navigation button active states
+      - Theme management (light/dark mode)
+   
+   8. Email Verification System
+      - EmailJS integration for sending verification codes
+      - Code generation and validation
+      - Resend functionality
+      - Fallback display for testing
+   
+   SECURITY NOTES:
+   - All encryption happens client-side (data never leaves browser)
+   - Passwords stored in plaintext (demo only - NOT production-ready!)
+   - Email verification required before app access
+   - SQLite database stored in browser's IndexedDB (persists across sessions)
+   - PBKDF2 used for password-to-key conversion (100,000 iterations, SHA-256)
+   
+   EXTERNAL DEPENDENCIES:
+   - CryptoJS: AES encryption library (CDN)
+   - JSZip: ZIP file creation library (CDN)
+   - jsPDF: PDF generation library (CDN)
+   - SQL.js: SQLite compiled to WebAssembly (CDN)
+   - EmailJS: Email sending service (CDN)
+   
+   BROWSER COMPATIBILITY:
+   - Requires modern browser with Web Crypto API support
+   - IndexedDB support required for database persistence
+   - File API support required for file processing
+   - Clipboard API support required for copy functionality
+*/
+
+/* ============================================
+   SQLITE DATABASE MANAGEMENT
+   ============================================
+   This application uses SQLite (via sql.js) for client-side data storage.
+   The database is persisted in IndexedDB to survive browser sessions.
+   
+   Database Schema:
+   - users: User accounts with email verification
+   - history: Encryption/decryption operation history
+   - saved_keys: User-saved encryption keys
+   - saved_counters: User-saved CTR mode counters
+   - configs: Saved encryption configurations
+*/
+
+// Global database instance - will be initialized on page load
+let db = null;
+// SQL.js library reference - loaded from CDN
+let SQL = null;
+
+/**
+ * Initializes the SQLite database
+ * 
+ * This function:
+ * 1. Loads the SQL.js library
+ * 2. Attempts to load existing database from IndexedDB
+ * 3. Creates new database if none exists
+ * 4. Ensures all required tables are created
+ * 
+ * @returns {Promise<void>} - Resolves when database is ready
+ * 
+ * Error Handling:
+ * - Falls back to creating empty database if IndexedDB load fails
+ * - Logs errors to console for debugging
+ */
+async function initDatabase() {
+  try {
+    // Check if initSqlJs is available (from sql-wasm.js)
+    if (typeof initSqlJs === 'undefined') {
+      // Wait a bit for script to load
+      await new Promise(resolve => setTimeout(resolve, 100));
+      if (typeof initSqlJs === 'undefined') {
+        throw new Error('SQL.js library not loaded');
+      }
+    }
+    
+    // Load sql.js
+    SQL = await initSqlJs({
+      locateFile: file => `https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/${file}`
+    });
+    
+    // Try to load existing database from IndexedDB
+    const savedDb = await loadDatabaseFromIndexedDB();
+    
+    if (savedDb) {
+      db = new SQL.Database(savedDb);
+    } else {
+      db = new SQL.Database();
+      createTables();
+    }
+    
+    // Ensure tables exist (in case of version mismatch)
+    createTables();
+    
+    console.log('SQLite database initialized');
+  } catch (e) {
+    console.error('Error initializing database:', e);
+    // Fallback: create empty database if SQL is available
+    if (typeof SQL !== 'undefined' && SQL) {
+      try {
+        db = new SQL.Database();
+        createTables();
+      } catch (e2) {
+        console.error('Failed to create fallback database:', e2);
+      }
+    }
+  }
+}
+
+// Create database tables
+function createTables() {
+  if (!db) return;
+  
+  try {
+    // Users table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        email_verified INTEGER DEFAULT 0,
+        verification_code TEXT,
+        created_at INTEGER NOT NULL
+      )
+    `);
+    
+    // Add email_verified and verification_code columns if they don't exist (for existing databases)
+    try {
+      db.run('ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0');
+    } catch (e) {
+      // Column already exists, ignore
+    }
+    try {
+      db.run('ALTER TABLE users ADD COLUMN verification_code TEXT');
+    } catch (e) {
+      // Column already exists, ignore
+    }
+    
+    // History table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        timestamp INTEGER NOT NULL,
+        output TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )
+    `);
+    
+    // Saved keys table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS saved_keys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        name TEXT NOT NULL,
+        key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )
+    `);
+    
+    // Saved counters table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS saved_counters (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        name TEXT NOT NULL,
+        counter TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )
+    `);
+    
+    // Configs table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS configs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        mode TEXT,
+        op TEXT,
+        key TEXT,
+        ctr TEXT,
+        iv TEXT,
+        autoHex INTEGER,
+        outFmt TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )
+    `);
+    
+    saveDatabaseToIndexedDB();
+  } catch (e) {
+    console.error('Error creating tables:', e);
+  }
+}
+
+// Save database to IndexedDB
+async function saveDatabaseToIndexedDB() {
+  if (!db) return;
+  
+  try {
+    const data = db.export();
+    const buffer = data.buffer;
+    
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open('aes_again_db', 1);
+      
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const db_store = request.result;
+        if (!db_store.objectStoreNames.contains('database')) {
+          db_store.close();
+          const upgradeRequest = indexedDB.open('aes_again_db', 2);
+          upgradeRequest.onupgradeneeded = () => {
+            upgradeRequest.result.createObjectStore('database');
+          };
+          upgradeRequest.onsuccess = () => {
+            const transaction = upgradeRequest.result.transaction(['database'], 'readwrite');
+            const store = transaction.objectStore('database');
+            store.put(buffer, 'db');
+            resolve();
+          };
+        } else {
+          const transaction = db_store.transaction(['database'], 'readwrite');
+          const store = transaction.objectStore('database');
+          store.put(buffer, 'db');
+          resolve();
+        }
+      };
+      
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore('database');
+      };
+    });
+  } catch (e) {
+    console.error('Error saving database:', e);
+  }
+}
+
+// Load database from IndexedDB
+async function loadDatabaseFromIndexedDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('aes_again_db', 1);
+    
+    request.onerror = () => resolve(null);
+    request.onsuccess = () => {
+      const db_store = request.result;
+      if (!db_store.objectStoreNames.contains('database')) {
+        resolve(null);
+        return;
+      }
+      const transaction = db_store.transaction(['database'], 'readonly');
+      const store = transaction.objectStore('database');
+      const getRequest = store.get('db');
+      
+      getRequest.onerror = () => resolve(null);
+      getRequest.onsuccess = () => {
+        resolve(getRequest.result ? new Uint8Array(getRequest.result) : null);
+      };
+    };
+    
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore('database');
+    };
+  });
+}
+
+// Get current user ID
+function getCurrentUserId() {
+  const currentUser = localStorage.getItem('aes-current-user');
+  if (!currentUser) return null;
+  try {
+    const user = JSON.parse(currentUser);
+    // User object now contains id directly
+    return user.id || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Password-Based Key Derivation Function (PBKDF2)
+ * 
+ * Converts a user-friendly password into a cryptographically secure 256-bit hex key
+ * using the PBKDF2 algorithm. This allows users to use memorable passwords instead
+ * of long hex strings.
+ * 
+ * @param {string} password - The user's password (e.g., "MySecretPassword123")
+ * @param {string} salt - Salt value for key derivation (default: 'AES-Project-Salt-2024')
+ *                        Salt prevents rainbow table attacks and ensures same password
+ *                        produces different keys if salt changes
+ * @returns {Promise<string>} - A 256-bit (64 hex characters) key derived from the password
+ * 
+ * Algorithm Details:
+ * - Uses Web Crypto API's PBKDF2 implementation
+ * - 100,000 iterations: Industry standard for balancing security and performance
+ * - SHA-256 hashing: Secure hash function for key derivation
+ * - 256-bit output: Provides AES-256 encryption strength
+ * 
+ * Security Notes:
+ * - The salt is fixed in this implementation. For production, consider using
+ *   a unique salt per user or per encryption operation for enhanced security.
+ * - The iteration count (100,000) is a good balance but can be increased for
+ *   higher security if performance allows.
+ */
+async function deriveKeyFromPassword(password, salt = 'AES-Project-Salt-2024') {
+  // TextEncoder converts JavaScript strings to UTF-8 byte arrays
+  const encoder = new TextEncoder();
+  
+  // Step 1: Import the password as key material for PBKDF2
+  // This prepares the password to be used in the key derivation process
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',                                    // Format: raw bytes
+    encoder.encode(password),                 // Convert password string to bytes
+    'PBKDF2',                                 // Algorithm: Password-Based Key Derivation Function 2
+    false,                                    // Not extractable (security: key can't be exported)
+    ['deriveBits']                            // Usage: this key material will be used to derive bits
+  );
+  
+  // Step 2: Derive the actual encryption key from the password
+  // PBKDF2 applies the hash function multiple times to make brute-force attacks harder
+  const saltBytes = encoder.encode(salt);
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',                         // Algorithm name
+      salt: saltBytes,                        // Salt prevents precomputed attacks
+      iterations: 100000,                     // Number of hash iterations (higher = more secure but slower)
+      hash: 'SHA-256'                         // Hash function to use in PBKDF2
+    },
+    keyMaterial,                              // The password-derived key material
+    256                                       // Output length: 256 bits = 32 bytes = AES-256 key size
+  );
+  
+  // Step 3: Convert the derived bits to a hex string for use with CryptoJS
+  // The derivedBits is an ArrayBuffer, so we convert it to Uint8Array then to hex
+  const derivedKey = new Uint8Array(derivedBits);
+  return bytesToHex(derivedKey);
+}
+
+/* ============================================
+   CRYPTOGRAPHIC HELPER FUNCTIONS
+   ============================================
+   These functions handle conversions between different data formats
+   needed for encryption/decryption operations.
+*/
+
+/**
+ * Converts a hexadecimal string to a byte array (Uint8Array)
+ * 
+ * @param {string} hex - Hexadecimal string (e.g., "2b7e1516")
+ * @returns {Uint8Array} - Array of bytes representing the hex string
+ * @throws {Error} - If hex string has odd length (invalid hex)
+ * 
+ * Example: "2b7e" -> [0x2b, 0x7e] = [43, 126]
+ */
+function hexToBytes(hex) {
+  // Hex strings must have even length (each byte = 2 hex characters)
+  if (hex.length % 2) throw new Error('odd-length hex');
+  
+  // Create output array: each byte = 2 hex characters
+  const out = new Uint8Array(hex.length / 2);
+  
+  // Parse each pair of hex characters into a byte
+  for (let i = 0; i < out.length; i++) {
+    // Extract 2 characters, parse as base-16 (hex), convert to integer
+    out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  }
+  return out;
+}
+
+/**
+ * Converts a byte array to a hexadecimal string
+ * 
+ * @param {Uint8Array} u8 - Array of bytes
+ * @returns {string} - Hexadecimal string representation
+ * 
+ * Example: [43, 126] -> "2b7e"
+ */
+function bytesToHex(u8) {
+  let s = '';
+  for (let i = 0; i < u8.length; i++) {
+    // Convert byte to hex, pad with leading zero if needed (e.g., 0x0a -> "0a" not "a")
+    s += u8[i].toString(16).padStart(2, '0');
+  }
+  return s;
+}
+
+/**
+ * Converts a byte array to a Base64 string
+ * 
+ * @param {Uint8Array} u8 - Array of bytes
+ * @returns {string} - Base64 encoded string
+ * 
+ * Base64 is useful for:
+ * - URLs (no special characters)
+ * - JSON (safe string representation)
+ * - Email attachments
+ * - Compact representation (4 chars per 3 bytes)
+ */
+function bytesToBase64(u8) {
+  // Convert bytes to binary string (each byte becomes a character)
+  let bin = '';
+  for (let i = 0; i < u8.length; i++) {
+    bin += String.fromCharCode(u8[i]);
+  }
+  // Use browser's built-in btoa() function to encode to Base64
+  return btoa(bin);
+}
+
+/**
+ * Converts Uint8Array (JavaScript) to WordArray (CryptoJS format)
+ * 
+ * CryptoJS uses WordArray internally, which stores data as 32-bit words (4 bytes each).
+ * This function converts our byte array to CryptoJS's expected format.
+ * 
+ * @param {Uint8Array} u8 - JavaScript byte array
+ * @returns {CryptoJS.lib.WordArray} - CryptoJS WordArray object
+ * 
+ * Conversion process:
+ * - Groups bytes into 32-bit words (4 bytes per word)
+ * - Each word is a 32-bit integer: [byte0, byte1, byte2, byte3] -> (byte0 << 24) | (byte1 << 16) | (byte2 << 8) | byte3
+ */
+function uaToWA(u8) {
+  const words = [];
+  // Process 4 bytes at a time (one 32-bit word)
+  for (let i = 0; i < u8.length; i += 4) {
+    // Combine 4 bytes into a single 32-bit word using bitwise operations
+    // || 0 handles cases where array length isn't a multiple of 4
+    words.push(
+      ((u8[i] || 0) << 24) |      // Most significant byte: shift left 24 bits
+      ((u8[i + 1] || 0) << 16) |  // Second byte: shift left 16 bits
+      ((u8[i + 2] || 0) << 8) |   // Third byte: shift left 8 bits
+      ((u8[i + 3] || 0) << 0)     // Least significant byte: no shift
+    );
+  }
+  // Create CryptoJS WordArray: words array + original byte length
+  return CryptoJS.lib.WordArray.create(words, u8.length);
+}
+
+/**
+ * Converts WordArray (CryptoJS format) back to Uint8Array (JavaScript)
+ * 
+ * This is the reverse operation of uaToWA - converts CryptoJS output back to
+ * standard JavaScript byte arrays for further processing.
+ * 
+ * @param {CryptoJS.lib.WordArray} w - CryptoJS WordArray object
+ * @returns {Uint8Array} - JavaScript byte array
+ * 
+ * Conversion process:
+ * - Extracts bytes from 32-bit words
+ * - Uses bitwise operations to extract each byte from the word
+ */
+function WAtoUa(w) {
+  // Create output array with size from WordArray's sigBytes (significant bytes)
+  const u8 = new Uint8Array(w.sigBytes);
+  let i = 0;
+  
+  // Process each 32-bit word
+  for (let j = 0; j < w.words.length; j++) {
+    let v = w.words[j];
+    // Extract 4 bytes from the word (most significant to least significant)
+    for (let k = 3; k >= 0; k--) {
+      if (i < u8.length) {
+        // Right shift to get the desired byte, then mask with 0xff to get only that byte
+        u8[i++] = (v >>> (k * 8)) & 0xff;
+      }
+    }
+  }
+  return u8;
+}
+
+/**
+ * Padding function for AES encryption
+ * 
+ * AES requires data to be a multiple of 16 bytes (128 bits). This function pads
+ * the input data using a custom zero-count padding scheme:
+ * - Fills with zeros, then adds padding length as last byte
+ * 
+ * Padding Scheme:
+ * - If data is already multiple of 16: add 16 bytes of padding (all zeros + 16)
+ * - Otherwise: add (16 - remainder) bytes of zeros + padding length
+ * 
+ * Example:
+ * - Input: [1, 2, 3] (3 bytes)
+ * - Output: [1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13]
+ *           (3 data bytes + 13 zeros + padding length 13)
+ * 
+ * @param {Uint8Array} u8 - Input data to pad
+ * @returns {Uint8Array} - Padded data (length is multiple of 16)
+ */
+function padZeroCount(u8) {
+  // Calculate remainder when divided by 16 (AES block size)
+  const r = u8.length % 16;
+  // Calculate padding needed: if already multiple of 16, pad with 16 bytes
+  // Otherwise, pad to next multiple of 16
+  const p = r === 0 ? 16 : 16 - r;
+  
+  // Create output array with space for original data + padding
+  const out = new Uint8Array(u8.length + p);
+  out.set(u8); // Copy original data
+  
+  // Fill padding bytes with zeros (except last byte)
+  for (let i = u8.length; i < out.length - 1; i++) out[i] = 0;
+  
+  // Last byte contains the padding length (for unpadding)
+  out[out.length - 1] = p;
+  return out;
+}
+
+/**
+ * Removes padding from decrypted data
+ * 
+ * This is the reverse operation of padZeroCount. It reads the padding length
+ * from the last byte and removes that many bytes from the end.
+ * 
+ * @param {Uint8Array} u8 - Padded data (must be multiple of 16 bytes)
+ * @returns {Uint8Array} - Unpadded original data
+ * @throws {Error} - If data length is invalid or padding is malformed
+ */
+function unpadZeroCount(u8) {
+  // Validate: data must be multiple of 16 bytes (AES block size)
+  if (u8.length === 0 || u8.length % 16 !== 0) throw new Error('bad length');
+  
+  // Get padding length from last byte
+  const p = u8[u8.length - 1];
+  
+  // Validate padding length (must be between 1 and 16)
+  if (p < 1 || p > 16) throw new Error('bad pad');
+  
+  // Verify all padding bytes (except last) are zeros
+  for (let i = u8.length - p; i < u8.length - 1; i++) {
+    if (u8[i] !== 0) throw new Error('bad pad');
+  }
+  
+  // Return data without padding (slice removes last p bytes)
+  return u8.slice(0, u8.length - p);
+}
+
+/**
+ * Parses and validates a hex key string
+ * 
+ * Validates that the key is a valid hex string and has one of the supported
+ * AES key lengths: 128-bit (16 bytes), 192-bit (24 bytes), or 256-bit (32 bytes).
+ * 
+ * @param {string} hex - Hexadecimal key string
+ * @returns {CryptoJS.lib.WordArray} - CryptoJS WordArray representation of the key
+ * @throws {Error} - If key length is invalid
+ */
+function parseKey(hex) {
+  const k = hexToBytes(hex);
+  // AES supports three key sizes: 128, 192, or 256 bits
+  if (!(k.length === 16 || k.length === 24 || k.length === 32)) {
+    throw new Error('key length invalid');
+  }
+  return uaToWA(k);
+}
+
+/**
+ * Creates a 16-byte array filled with zeros
+ * 
+ * Used for default IV (Initialization Vector) when user doesn't provide one.
+ * Note: Using all zeros is NOT secure for production - this is for demo/testing.
+ * 
+ * @returns {Uint8Array} - 16-byte array of zeros
+ */
+function zeros16() {
+  return new Uint8Array(16);
+}
+
+/**
+ * Main encryption/decryption function
+ * 
+ * Performs AES encryption or decryption using the specified mode and parameters.
+ * Supports multiple AES modes: ECB, CBC, CFB, OFB, and CTR.
+ * 
+ * @param {string} mode - Encryption mode: 'ecb', 'cbc', 'cfb', 'ofb', or 'ctr'
+ * @param {string} op - Operation: 'enc' for encryption, 'dec' for decryption
+ * @param {string} keyHex - Encryption key as hexadecimal string (128/192/256 bits)
+ * @param {string} ctrHex - Counter value for CTR mode (16 bytes hex, optional)
+ * @param {string} ivHex - Initialization Vector for CBC/CFB/OFB modes (16 bytes hex, optional)
+ * @param {Uint8Array} bytes - Input data to encrypt/decrypt
+ * @returns {Uint8Array} - Encrypted or decrypted data
+ * @throws {Error} - If input validation fails or operation cannot be performed
+ * 
+ * Mode Details:
+ * - ECB: Electronic Codebook - simplest mode, each block encrypted independently
+ * - CBC: Cipher Block Chaining - each block XORed with previous ciphertext
+ * - CFB: Cipher Feedback - turns block cipher into stream cipher
+ * - OFB: Output Feedback - generates keystream, XORs with plaintext
+ * - CTR: Counter - uses counter with key to generate keystream
+ */
+function runCrypto(mode, op, keyHex, ctrHex, ivHex, bytes) {
+  // Parse and validate the encryption key
+  const key = parseKey(keyHex);
+  
+  // Initialize IV (Initialization Vector) - defaults to zeros if not provided
+  // IV is required for CBC, CFB, OFB modes to ensure same plaintext produces different ciphertext
+  let ivWA = uaToWA(zeros16());
+  if (ivHex) ivWA = uaToWA(hexToBytes(ivHex));
+  
+  // Configure CryptoJS based on selected mode
+  // Default to CBC mode
+  let cfg = { iv: ivWA, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.NoPadding };
+  
+  // Set mode-specific configuration
+  if (mode === 'ecb') {
+    // ECB mode doesn't use IV
+    cfg = { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.NoPadding };
+  } else if (mode === 'cfb') {
+    cfg = { iv: ivWA, mode: CryptoJS.mode.CFB, padding: CryptoJS.pad.NoPadding };
+  } else if (mode === 'ofb') {
+    cfg = { iv: ivWA, mode: CryptoJS.mode.OFB, padding: CryptoJS.pad.NoPadding };
+  } else if (mode === 'ctr') {
+    // CTR mode uses counter instead of IV
+    const c = ctrHex ? hexToBytes(ctrHex) : zeros16();
+    cfg = { iv: uaToWA(c), mode: CryptoJS.mode.CTR, padding: CryptoJS.pad.NoPadding };
+  }
+  
+  // Prepare input bytes
+  let inBytes = bytes;
+  
+  // For encryption: pad data to multiple of 16 bytes (except CTR which is stream mode)
+  if (op === 'enc') {
+    if (mode !== 'ctr') inBytes = padZeroCount(bytes);
+  } else {
+    // For decryption: validate that data is proper length (except CTR)
+    if (inBytes.length % 16 !== 0 && mode !== 'ctr') {
+      throw new Error('bad length');
+    }
+  }
+  
+  // Convert input to CryptoJS WordArray format
+  const wa = uaToWA(inBytes);
+  
+  // Perform encryption or decryption using CryptoJS
+  // encrypt() returns an object with ciphertext property
+  // decrypt() takes an object with ciphertext property
+  const out = op === 'enc' 
+    ? CryptoJS.AES.encrypt(wa, key, cfg).ciphertext 
+    : CryptoJS.AES.decrypt({ ciphertext: wa }, key, cfg);
+  
+  // Convert CryptoJS output back to JavaScript Uint8Array
+  let u8 = WAtoUa(out);
+  
+  // Remove padding after decryption (except CTR which doesn't use padding)
+  if (op === 'dec' && mode !== 'ctr') {
+    u8 = unpadZeroCount(u8);
+  }
+  
+  return u8;
+}
+
+/* ============================================
+   DOM ELEMENT REFERENCES
+   ============================================
+   Store references to frequently accessed DOM elements for performance.
+   These are cached once on page load to avoid repeated getElementById calls.
+*/
+
+// Configuration panel elements
+const modeEl = document.getElementById('mode');              // AES mode selector (ECB, CBC, CFB, OFB, CTR)
+const opEl = document.getElementById('op');                   // Operation selector (Encrypt/Decrypt)
+const keyTypeEl = document.getElementById('keyType');         // Key type selector (Hex/Password)
+const keyEl = document.getElementById('key');                 // Hex key input field
+const passwordKeyEl = document.getElementById('passwordKey'); // Password input field
+const hexKeySection = document.getElementById('hexKeySection');       // Hex key section container
+const passwordKeySection = document.getElementById('passwordKeySection'); // Password section container
+const ivEl = document.getElementById('iv');                   // Initialization Vector input
+const ctrEl = document.getElementById('ctr');                 // Counter input (for CTR mode)
+const autoHex = document.getElementById('autoHex');           // Auto-detect hex checkbox
+const outFmt = document.getElementById('outFmt');             // Output format selector (Text/Hex/Base64)
+
+// Main content area elements
+const inputEl = document.getElementById('input');           // Text input area
+const outputEl = document.getElementById('output');          // Output display area
+
+// Action buttons
+const copyBtnBottom = document.getElementById('copyBtnBottom');         // Copy output button
+const downloadPdfBtnBottom = document.getElementById('downloadPdfBtnBottom'); // Download PDF button
+const runBtn = document.getElementById('runBtn');             // Run encryption/decryption button
+const historyBtn = document.getElementById('historyBtn');    // Show history button
+
+// History dialog elements
+const historyDialog = document.getElementById('historyDialog'); // History modal dialog
+const historyList = document.getElementById('historyList');     // History list container
+
+// Global state variables
+let lastOutputBytes = null;  // Stores last encryption/decryption output bytes (for format conversion)
+let files = [];              // Array of selected files for batch processing
+let zipBlob = null;          // Generated ZIP file blob (for download)
+
+// Toast
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+/* ============================================
+   TAB NAVIGATION SYSTEM
+   ============================================
+   Handles switching between "Text" and "File" tabs in the main content area.
+*/
+
+// Set up tab switching functionality
+// When a tab is clicked, it becomes active and shows its corresponding content
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const tabName = tab.dataset.tab; // Get tab name from data attribute (e.g., "text" or "file")
+    
+    // Remove active class from all tabs and content panels
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    
+    // Activate clicked tab and its corresponding content panel
+    tab.classList.add('active');
+    document.getElementById(tabName + 'Tab').classList.add('active');
+  });
+});
+
+// Key type toggle - show/hide hex or password input
+if (keyTypeEl) {
+  keyTypeEl.addEventListener('change', () => {
+    const keyType = keyTypeEl.value;
+    if (keyType === 'password') {
+      hexKeySection.style.display = 'none';
+      passwordKeySection.style.display = 'block';
+    } else {
+      hexKeySection.style.display = 'block';
+      passwordKeySection.style.display = 'none';
+    }
+    validate();
+  });
+}
+
+// Mode change - show/hide IV/CTR
+modeEl.addEventListener('change', () => {
+  const mode = modeEl.value;
+  const ivSection = document.getElementById('ivSection');
+  const ctrSection = document.getElementById('ctrSection');
+  const ivModeLabel = document.getElementById('ivModeLabel');
+  
+  if (mode === 'ctr') {
+    ivSection.style.display = 'none';
+    ctrSection.style.display = 'block';
+  } else {
+    ivSection.style.display = 'block';
+    ctrSection.style.display = 'none';
+    ivModeLabel.textContent = mode.toUpperCase();
+  }
+  validate();
+});
+
+/* ============================================
+   VALIDATION FUNCTIONS
+   ============================================
+   These functions validate user input before encryption/decryption operations.
+   They check format, length, and required fields.
+*/
+
+/**
+ * Checks if a string contains only hexadecimal characters
+ * 
+ * @param {string} s - String to check
+ * @returns {boolean} - True if string is valid hex, false otherwise
+ * 
+ * Hex strings can only contain: 0-9, a-f, A-F
+ */
+function isHex(s) {
+  // Regular expression: ^ = start, [0-9a-fA-F]+ = one or more hex chars, $ = end
+  return /^[0-9a-fA-F]+$/.test(s);
+}
+
+/**
+ * Shows or hides error messages in the UI
+ * 
+ * @param {string} id - ID of the error message element
+ * @param {boolean} show - True to show error, false to hide
+ */
+function showError(id, show) {
+  const el = document.getElementById(id);
+  if (show) {
+    el.classList.add('show'); // Add 'show' class to display error
+  } else {
+    el.classList.remove('show'); // Remove 'show' class to hide error
+  }
+}
+
+/**
+ * Validates all user inputs before encryption/decryption
+ * 
+ * This function checks:
+ * - Key format and length (hex mode) or presence (password mode)
+ * - IV format and length (for CBC/CFB/OFB modes)
+ * - Counter format and length (for CTR mode)
+ * 
+ * @returns {boolean} - True if all inputs are valid, false otherwise
+ * 
+ * Validation Rules:
+ * - Hex keys: Must be 32, 48, or 64 hex characters (128, 192, or 256 bits)
+ * - IV: Must be exactly 32 hex characters (16 bytes)
+ * - Counter: Must be exactly 32 hex characters (16 bytes)
+ * - Password: Must not be empty
+ */
+function validate() {
+  let ok = true;
+  const keyType = keyTypeEl ? keyTypeEl.value : 'hex';
+  
+  if (keyType === 'password') {
+    // Validate password
+    const password = passwordKeyEl ? passwordKeyEl.value.trim() : '';
+    if (!password) {
+      showError('passwordKeyErr', true);
+      ok = false;
+    } else {
+      showError('passwordKeyErr', false);
+    }
+    // Clear hex key errors when in password mode
+    showError('keyErr', false);
+  } else {
+    // Validate hex key
+    const k = keyEl.value.trim();
+    if (k && (!isHex(k) || ![32, 48, 64].includes(k.length))) {
+      showError('keyErr', true);
+      ok = false;
+    } else {
+      showError('keyErr', false);
+    }
+    // Clear password errors when in hex mode
+    showError('passwordKeyErr', false);
+  }
+  const iv = ivEl.value.trim();
+  if (iv && (!isHex(iv) || iv.length !== 32)) {
+    showError('ivErr', true);
+    ok = false;
+  } else {
+    showError('ivErr', false);
+  }
+  const ctr = ctrEl.value.trim();
+  if (modeEl.value === 'ctr' && (!ctr || !isHex(ctr) || ctr.length !== 32)) {
+    showError('ctrErr', true);
+    ok = false;
+  } else {
+    showError('ctrErr', false);
+  }
+  return ok;
+}
+
+[keyEl, ivEl, ctrEl, modeEl].forEach(el => el.addEventListener('input', validate));
+if (passwordKeyEl) {
+  passwordKeyEl.addEventListener('input', validate);
+}
+
+// Run encryption
+async function runText() {
+  if (!validate()) {
+    toast('Please fix validation errors');
+    return;
+  }
+  const mode = modeEl.value;
+  const op = opEl.value;
+  const keyType = keyTypeEl ? keyTypeEl.value : 'hex';
+  let key;
+  
+  // Get key based on key type
+  if (keyType === 'password') {
+    const password = passwordKeyEl ? passwordKeyEl.value.trim() : '';
+    if (!password) {
+      toast('Please enter a password');
+      return;
+    }
+    try {
+      // Derive 256-bit key from password using PBKDF2
+      key = await deriveKeyFromPassword(password);
+      toast('Password converted to 256-bit key');
+    } catch (e) {
+      toast('Error deriving key from password: ' + e.message);
+      return;
+    }
+  } else {
+    key = keyEl.value.trim();
+  }
+  
+  const ctr = ctrEl.value.trim();
+  const iv = ivEl.value.trim();
+  const auto = autoHex.checked;
+  const raw = inputEl.value;
+  const t0 = performance.now();
+  let bytes, format = 'text';
+  
+  try {
+    if (auto && /^[0-9a-fA-F\s]+$/.test(raw) && raw.replace(/\s+/g, '').length % 2 === 0) {
+      bytes = hexToBytes(raw.replace(/\s+/g, ''));
+      format = 'hex';
+    } else {
+      bytes = new TextEncoder().encode(raw);
+    }
+    const out = runCrypto(mode, op, key, ctr, iv, bytes);
+    lastOutputBytes = out;
+    let str = '';
+    if (outFmt.value === 'hex') {
+      str = bytesToHex(out);
+    } else if (outFmt.value === 'base64') {
+      str = bytesToBase64(out);
+    } else {
+      str = new TextDecoder().decode(out).replace(/\u0000+$/, '');
+    }
+    outputEl.value = str;
+    // Buttons are always visible now, but we can enable/disable them
+    if (str) {
+      if (copyBtnBottom) copyBtnBottom.disabled = false;
+      if (downloadPdfBtnBottom) downloadPdfBtnBottom.disabled = false;
+    } else {
+      if (copyBtnBottom) copyBtnBottom.disabled = true;
+      if (downloadPdfBtnBottom) downloadPdfBtnBottom.disabled = true;
+    }
+    
+    // Save to history (SQLite)
+    if (db) {
+      try {
+        const userId = getCurrentUserId();
+        const stmt = db.prepare('INSERT INTO history (user_id, timestamp, output, mode, operation) VALUES (?, ?, ?, ?, ?)');
+        stmt.run([userId, Date.now(), str, mode, op]);
+        stmt.free();
+        
+        // Keep only last 20 entries per user
+        if (userId) {
+          const deleteStmt = db.prepare('DELETE FROM history WHERE user_id = ? AND id NOT IN (SELECT id FROM history WHERE user_id = ? ORDER BY timestamp DESC LIMIT 20)');
+          deleteStmt.run([userId, userId]);
+          deleteStmt.free();
+        }
+        saveDatabaseToIndexedDB();
+      } catch (e) {
+        console.error('Error saving history:', e);
+      }
+    }
+    
+    toast(op === 'enc' ? 'Encrypted successfully' : 'Decrypted successfully');
+  } catch (e) {
+    toast('Error: ' + e.message);
+  }
+}
+
+runBtn.addEventListener('click', runText);
+
+// Auto-update on output format change
+outFmt.addEventListener('change', () => {
+  if (lastOutputBytes && outputEl.value) {
+    let str = '';
+    if (outFmt.value === 'hex') {
+      str = bytesToHex(lastOutputBytes);
+    } else if (outFmt.value === 'base64') {
+      str = bytesToBase64(lastOutputBytes);
+    } else {
+      str = new TextDecoder().decode(lastOutputBytes).replace(/\u0000+$/, '');
+    }
+    outputEl.value = str;
+    // Buttons are always visible now, but we can enable/disable them
+    if (str) {
+      if (copyBtnBottom) copyBtnBottom.disabled = false;
+      if (downloadPdfBtnBottom) downloadPdfBtnBottom.disabled = false;
+    } else {
+      if (copyBtnBottom) copyBtnBottom.disabled = true;
+      if (downloadPdfBtnBottom) downloadPdfBtnBottom.disabled = true;
+    }
+  }
+});
+
+// Copy button functions
+let copiedTimeout;
+function handleCopy(btn) {
+  const text = outputEl.value;
+  if (!text) {
+    toast('Nothing to copy');
+    return;
+  }
+  navigator.clipboard.writeText(text).then(() => {
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = '<span>✓</span> Copied!';
+    btn.classList.add('copied');
+    clearTimeout(copiedTimeout);
+    copiedTimeout = setTimeout(() => {
+      btn.innerHTML = originalHTML;
+      btn.classList.remove('copied');
+    }, 2000);
+    toast('Copied to clipboard');
+  });
+}
+
+if (copyBtnBottom) {
+  copyBtnBottom.addEventListener('click', () => handleCopy(copyBtnBottom));
+}
+
+// PDF Download function
+function downloadPdf() {
+  const text = outputEl.value;
+  if (!text) {
+    toast('Nothing to download');
+    return;
+  }
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.setFontSize(12);
+    const lines = doc.splitTextToSize(text, 180);
+    doc.text(lines, 10, 20);
+    doc.save('aes-output.pdf');
+    toast('PDF downloaded');
+  } catch (e) {
+    toast('Error generating PDF: ' + e.message);
+  }
+}
+
+// PDF Download button
+if (downloadPdfBtnBottom) {
+  downloadPdfBtnBottom.addEventListener('click', downloadPdf);
+}
+
+// Generate random key (only works in hex mode)
+document.getElementById('genKey').addEventListener('click', () => {
+  // Switch to hex mode if in password mode
+  if (keyTypeEl && keyTypeEl.value === 'password') {
+    keyTypeEl.value = 'hex';
+    keyTypeEl.dispatchEvent(new Event('change'));
+  }
+  
+  const lengths = [32, 48, 64];
+  const len = lengths[Math.floor(Math.random() * lengths.length)];
+  let key = '';
+  for (let i = 0; i < len; i++) {
+    key += Math.floor(Math.random() * 16).toString(16);
+  }
+  keyEl.value = key;
+  validate();
+  toast('Random key generated');
+});
+
+// Save key (only works in hex mode)
+document.getElementById('saveKey').addEventListener('click', () => {
+  // Check if in hex mode
+  if (keyTypeEl && keyTypeEl.value === 'password') {
+    toast('Please switch to Hex Key mode to save keys');
+    return;
+  }
+  
+  const key = keyEl.value.trim();
+  if (!key || !isHex(key) || ![32, 48, 64].includes(key.length)) {
+    toast('Invalid key');
+    return;
+  }
+  const name = prompt('Key name?');
+  if (!name) return;
+  
+  if (!db) {
+    toast('Database not initialized');
+    return;
+  }
+  
+  try {
+    const userId = getCurrentUserId();
+    const stmt = db.prepare('INSERT INTO saved_keys (user_id, name, key, created_at) VALUES (?, ?, ?, ?)');
+    stmt.run([userId, name, key, Date.now()]);
+    stmt.free();
+    saveDatabaseToIndexedDB();
+    loadSavedKeys();
+    toast('Key saved');
+  } catch (e) {
+    console.error('Error saving key:', e);
+    toast('Error saving key');
+  }
+});
+
+// Load saved keys
+const savedKeysSelect = document.getElementById('savedKeys');
+function loadSavedKeys() {
+  if (!savedKeysSelect || !db) return;
+  
+  try {
+    const userId = getCurrentUserId();
+    const stmt = db.prepare('SELECT id, name FROM saved_keys WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC');
+    stmt.bind([userId]);
+    
+    savedKeysSelect.innerHTML = '<option value="">Load saved key...</option>';
+    const keys = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      keys.push(row);
+      const opt = document.createElement('option');
+      opt.value = row.id;
+      opt.textContent = row.name;
+      savedKeysSelect.appendChild(opt);
+    }
+    stmt.free();
+    
+    // Store keys in a map for quick lookup
+    savedKeysSelect._keysMap = {};
+    keys.forEach(k => {
+      savedKeysSelect._keysMap[k.id] = k;
+    });
+  } catch (e) {
+    console.error('Error loading saved keys:', e);
+  }
+}
+if (savedKeysSelect) {
+  savedKeysSelect.addEventListener('change', e => {
+    if (e.target.value === '' || !db) return;
+    
+    try {
+      const keyId = parseInt(e.target.value, 10);
+      const stmt = db.prepare('SELECT key FROM saved_keys WHERE id = ?');
+      stmt.bind([keyId]);
+      
+      if (stmt.step()) {
+        const row = stmt.getAsObject();
+        keyEl.value = row.key;
+        validate();
+        toast('Key loaded');
+        e.target.value = '';
+      }
+      stmt.free();
+    } catch (err) {
+      console.error('Error loading key:', err);
+      toast('Error loading key');
+    }
+  });
+}
+
+// Counter helpers (CTR mode)
+const savedCtrsSelect = document.getElementById('savedCtrs');
+function loadSavedCtrs() {
+  if (!savedCtrsSelect || !db) return;
+  
+  try {
+    const userId = getCurrentUserId();
+    const stmt = db.prepare('SELECT id, name FROM saved_counters WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC');
+    stmt.bind([userId]);
+    
+    savedCtrsSelect.innerHTML = '<option value="">Load saved counter...</option>';
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      const opt = document.createElement('option');
+      opt.value = row.id;
+      opt.textContent = row.name;
+      savedCtrsSelect.appendChild(opt);
+    }
+    stmt.free();
+  } catch (e) {
+    console.error('Error loading saved counters:', e);
+  }
+}
+const genCtrBtn = document.getElementById('genCtr');
+if (genCtrBtn) {
+  genCtrBtn.addEventListener('click', () => {
+    let ctr = '';
+    for (let i = 0; i < 32; i++) {
+      ctr += Math.floor(Math.random() * 16).toString(16);
+    }
+    ctrEl.value = ctr;
+    validate();
+    toast('Random counter generated');
+  });
+}
+const saveCtrBtn = document.getElementById('saveCtr');
+if (saveCtrBtn) {
+  saveCtrBtn.addEventListener('click', () => {
+    const ctr = ctrEl.value.trim();
+    if (!ctr || !isHex(ctr) || ctr.length !== 32) {
+      toast('Invalid counter');
+      return;
+    }
+    const name = prompt('Counter name?');
+    if (!name) return;
+    
+    if (!db) {
+      toast('Database not initialized');
+      return;
+    }
+    
+    try {
+      const userId = getCurrentUserId();
+      const stmt = db.prepare('INSERT INTO saved_counters (user_id, name, counter, created_at) VALUES (?, ?, ?, ?)');
+      stmt.run([userId, name, ctr, Date.now()]);
+      stmt.free();
+      saveDatabaseToIndexedDB();
+      loadSavedCtrs();
+      toast('Counter saved');
+    } catch (e) {
+      console.error('Error saving counter:', e);
+      toast('Error saving counter');
+    }
+  });
+}
+if (savedCtrsSelect) {
+  savedCtrsSelect.addEventListener('change', e => {
+    if (e.target.value === '' || !db) return;
+    
+    try {
+      const ctrId = parseInt(e.target.value, 10);
+      const stmt = db.prepare('SELECT counter FROM saved_counters WHERE id = ?');
+      stmt.bind([ctrId]);
+      
+      if (stmt.step()) {
+        const row = stmt.getAsObject();
+        ctrEl.value = row.counter;
+        validate();
+        toast('Counter loaded');
+        e.target.value = '';
+      }
+      stmt.free();
+    } catch (err) {
+      console.error('Error loading counter:', err);
+      toast('Error loading counter');
+    }
+  });
+}
+
+/**
+ * Loads a demo configuration for quick testing
+ * 
+ * This function sets up a complete encryption configuration with:
+ * - A randomly generated key (128, 192, or 256 bits)
+ * - Appropriate mode settings
+ * - Default IV or counter values
+ * 
+ * @param {string} type - Demo type: 'cbc', 'ctr', or 'ofb'
+ * 
+ * Demo Configurations:
+ * - CBC: Uses CBC mode with all-zero IV (for demo only - not secure!)
+ * - CTR: Uses CTR mode with a sample counter value
+ * - OFB: Uses OFB mode with all-zero IV (for demo only - not secure!)
+ * 
+ * Note: All-zero IVs are used for convenience in demos but are NOT secure
+ * for real-world encryption. Always use random IVs in production.
+ */
+function loadDemo(type) {
+  // Demos use hex keys, so switch to hex mode if currently in password mode
+  if (keyTypeEl && keyTypeEl.value === 'password') {
+    keyTypeEl.value = 'hex';
+    keyTypeEl.dispatchEvent(new Event('change')); // Trigger change event to update UI
+  }
+  
+  // Generate a random key for the demo
+  // Randomly choose between 128-bit (32 chars), 192-bit (48 chars), or 256-bit (64 chars)
+  const lengths = [32, 48, 64];
+  const len = lengths[Math.floor(Math.random() * lengths.length)];
+  let key = '';
+  // Generate random hex characters
+  for (let i = 0; i < len; i++) {
+    key += Math.floor(Math.random() * 16).toString(16); // Random hex digit (0-f)
+  }
+  keyEl.value = key; // Set the generated key in the input field
+  
+  // Configure mode-specific settings
+  switch (type) {
+    case 'cbc':
+      modeEl.value = 'cbc';
+      ivEl.value = '00000000000000000000000000000000'; // All-zero IV (16 bytes = 32 hex chars)
+      break;
+    case 'ctr':
+      modeEl.value = 'ctr';
+      // Sample counter value (16 bytes = 32 hex chars)
+      ctrEl.value = 'f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff';
+      break;
+    case 'ofb':
+      modeEl.value = 'ofb';
+      ivEl.value = '00000000000000000000000000000000'; // All-zero IV
+      break;
+  }
+  
+  // Trigger mode change event to update UI (show/hide IV/CTR sections)
+  modeEl.dispatchEvent(new Event('change'));
+  validate(); // Validate the new configuration
+  toast(type.toUpperCase() + ' demo loaded with random key');
+}
+
+// Save config
+document.getElementById('saveConfigBtn').addEventListener('click', () => {
+  if (!db) {
+    toast('Database not initialized');
+    return;
+  }
+  
+  try {
+    const userId = getCurrentUserId();
+    const stmt = db.prepare('INSERT INTO configs (user_id, mode, op, key, ctr, iv, autoHex, outFmt, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    stmt.run([
+      userId,
+      modeEl.value,
+      opEl.value,
+      keyEl.value,
+      ctrEl.value,
+      ivEl.value,
+      autoHex.checked ? 1 : 0,
+      outFmt.value,
+      Date.now()
+    ]);
+    stmt.free();
+    saveDatabaseToIndexedDB();
+    toast('Configuration saved');
+  } catch (e) {
+    console.error('Error saving config:', e);
+    toast('Error saving configuration');
+  }
+});
+
+// Download config
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  const config = {
+    mode: modeEl.value,
+    op: opEl.value,
+    key: keyEl.value,
+    ctr: ctrEl.value,
+    iv: ivEl.value,
+    autoHex: autoHex.checked,
+    outFmt: outFmt.value
+  };
+  const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'aes-config.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('Configuration downloaded');
+});
+
+/**
+ * Displays encryption/decryption operation history
+ * 
+ * Shows a modal dialog with the last 20 operations performed by the user.
+ * Users can click on any history item to copy its output to clipboard.
+ * 
+ * History includes:
+ * - Output text (truncated if longer than 100 characters)
+ * - Operations are sorted by timestamp (newest first)
+ * - Only shows operations for current user (or guest operations)
+ * 
+ * Features:
+ * - Click any item to copy full output to clipboard
+ * - Automatically closes dialog after copying
+ * - Shows empty state if no history exists
+ */
+function showHistory() {
+  // Clear previous history display
+  historyList.innerHTML = '';
+  
+  // Check if database is initialized
+  if (!db) {
+    historyList.innerHTML = '<p style="color: var(--muted-foreground); text-align: center; padding: 2rem;">Database not initialized</p>';
+    historyDialog.classList.add('active'); // Show dialog anyway
+    return;
+  }
+  
+  try {
+    // Get current user ID (null for guests)
+    const userId = getCurrentUserId();
+    
+    // Query history: get user's operations OR guest operations (user_id IS NULL)
+    // Order by timestamp descending (newest first), limit to 20 most recent
+    const stmt = db.prepare('SELECT * FROM history WHERE user_id = ? OR user_id IS NULL ORDER BY timestamp DESC LIMIT 20');
+    stmt.bind([userId]);
+    
+    // Collect all results
+    const results = [];
+    while (stmt.step()) {
+      results.push(stmt.getAsObject()); // Convert row to JavaScript object
+    }
+    stmt.free(); // Free statement to prevent memory leaks
+    
+    // Display results
+    if (results.length === 0) {
+      // No history yet - show empty state message
+      historyList.innerHTML = '<p style="color: var(--muted-foreground); text-align: center; padding: 2rem;">No history yet</p>';
+    } else {
+      // Create a clickable item for each history entry
+      results.forEach(h => {
+        const item = document.createElement('div');
+        item.className = 'history-item';
+        const output = h.output || '';
+        
+        // Truncate long outputs for display (show first 100 chars + "...")
+        item.textContent = (output.length > 100 ? output.slice(0, 100) + '...' : output);
+        
+        // Click handler: copy full output to clipboard
+        item.onclick = () => {
+          navigator.clipboard.writeText(output).then(() => {
+            toast('Copied to clipboard');
+            closeHistory(); // Close dialog after copying
+          });
+        };
+        historyList.appendChild(item);
+      });
+    }
+  } catch (e) {
+    console.error('Error loading history:', e);
+    historyList.innerHTML = '<p style="color: var(--muted-foreground); text-align: center; padding: 2rem;">Error loading history</p>';
+  }
+  
+  // Show the history dialog
+  historyDialog.classList.add('active');
+}
+
+function closeHistory() {
+  historyDialog.classList.remove('active');
+}
+
+historyBtn.addEventListener('click', showHistory);
+historyDialog.addEventListener('click', (e) => {
+  if (e.target === historyDialog) closeHistory();
+});
+
+/* ============================================
+   FILE HANDLING SYSTEM
+   ============================================
+   Handles file selection, drag-and-drop, and batch processing.
+   Supports multiple files that are processed and packaged into a ZIP.
+*/
+
+// File handling DOM elements
+const dropZone = document.getElementById('dropZone');        // Drag-and-drop area
+const filePicker = document.getElementById('filePicker');     // Hidden file input element
+const fileList = document.getElementById('fileList');        // Container for file list display
+const processFilesBtn = document.getElementById('processFiles'); // Button to process selected files
+const downloadZipBtn = document.getElementById('downloadZip'); // Button to download ZIP
+
+// Make drop zone clickable - opens file picker
+dropZone.addEventListener('click', () => filePicker.click());
+
+// Drag and drop event handlers
+// dragover: Fired when dragging over the drop zone
+dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault(); // Prevent default browser behavior (opening file)
+  dropZone.style.borderColor = 'var(--primary)'; // Highlight drop zone
+});
+
+// dragleave: Fired when dragging leaves the drop zone
+dropZone.addEventListener('dragleave', () => {
+  dropZone.style.borderColor = 'var(--border)'; // Reset border color
+});
+
+// drop: Fired when files are dropped
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault(); // Prevent default browser behavior
+  dropZone.style.borderColor = 'var(--border)'; // Reset border color
+  files = [...e.dataTransfer.files]; // Convert FileList to array and store
+  renderFiles(); // Update UI to show selected files
+});
+
+// File picker change handler (when user selects files via file dialog)
+filePicker.addEventListener('change', (e) => {
+  files = [...e.target.files]; // Convert FileList to array
+  renderFiles(); // Update UI
+});
+
+/**
+ * Renders the list of selected files in the UI
+ * 
+ * Displays each file's name and size, and shows/hides action buttons
+ * based on whether files are selected.
+ */
+function renderFiles() {
+  fileList.innerHTML = ''; // Clear previous file list
+  
+  // If no files selected, hide action buttons
+  if (files.length === 0) {
+    processFilesBtn.style.display = 'none';
+    downloadZipBtn.style.display = 'none';
+    return;
+  }
+  
+  // Create a row for each selected file showing name and size
+  files.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'file-row';
+    // Display filename and size in KB (rounded)
+    row.innerHTML = `<div>${f.name}</div><div>${Math.round(f.size / 1024)} KB</div>`;
+    fileList.appendChild(row);
+  });
+  
+  // Show process button when files are selected
+  processFilesBtn.style.display = 'block';
+}
+
+/**
+ * Batch File Processing Handler
+ * 
+ * Processes multiple files in batch, encrypting/decrypting each file and
+ * packaging all results into a single ZIP archive for download.
+ * 
+ * Process Flow:
+ * 1. Validate inputs and files
+ * 2. Get encryption key (hex or derive from password)
+ * 3. For each file:
+ *    - Read file as binary data
+ *    - Encrypt/decrypt using selected mode and key
+ *    - Format output according to selected format
+ *    - Add to ZIP archive as .txt file
+ * 4. Generate ZIP file
+ * 5. Enable download button
+ * 
+ * File Processing:
+ * - All files are processed sequentially (one at a time)
+ * - Output files are renamed to .txt extension
+ * - Original filenames are preserved (without extension)
+ * - Errors in one file don't stop processing of other files
+ * 
+ * ZIP Generation:
+ * - Uses DEFLATE compression (standard ZIP compression)
+ * - Compression level 6 (balanced between size and speed)
+ * - Generated as Blob for browser download
+ */
+processFilesBtn.addEventListener('click', async () => {
+  // Validate that files are selected
+  if (!files.length) {
+    toast('No files selected');
+    return;
+  }
+  
+  // Validate encryption configuration
+  if (!validate()) {
+    toast('Please fix validation errors');
+    return;
+  }
+  
+  // Get encryption configuration
+  const mode = modeEl.value;        // AES mode
+  const op = opEl.value;            // Operation: encrypt or decrypt
+  const keyType = keyTypeEl ? keyTypeEl.value : 'hex'; // Key type
+  let key; // Will hold the encryption key
+  
+  // Get encryption key based on user's choice
+  if (keyType === 'password') {
+    // Password mode: derive key from password
+    const password = passwordKeyEl ? passwordKeyEl.value.trim() : '';
+    if (!password) {
+      toast('Please enter a password');
+      return;
+    }
+    try {
+      // Convert password to 256-bit hex key using PBKDF2
+      key = await deriveKeyFromPassword(password);
+    } catch (e) {
+      toast('Error deriving key from password: ' + e.message);
+      return;
+    }
+  } else {
+    // Hex mode: use key directly
+    key = keyEl.value.trim();
+  }
+  
+  // Get remaining configuration
+  const ctr = ctrEl.value.trim();        // Counter (for CTR mode)
+  const iv = ivEl.value.trim();         // IV (for CBC/CFB/OFB modes)
+  const selectedFormat = outFmt.value;  // Output format: text, hex, or base64
+  
+  // Create new ZIP archive
+  const zip = new JSZip();
+  
+  // Process each file sequentially
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    const fr = new FileReader(); // FileReader API for reading file contents
+    
+    // Read file asynchronously and process
+    await new Promise(res => {
+      fr.onload = () => {
+        try {
+          // Convert file data to byte array
+          const data = new Uint8Array(fr.result);
+          
+          // Perform encryption/decryption
+          const out = runCrypto(mode, op, key, ctr, iv, data);
+          
+          // Format output according to user's selection
+          let formatted = '';
+          if (selectedFormat === 'hex') {
+            formatted = bytesToHex(out); // Convert to hexadecimal string
+          } else if (selectedFormat === 'base64') {
+            formatted = bytesToBase64(out); // Convert to Base64 string
+          } else {
+            // Text format: interpret as UTF-8, remove trailing null bytes
+            formatted = new TextDecoder('utf-8', { fatal: false }).decode(out).replace(/\u0000+$/, '');
+          }
+          
+          // Prepare filename: remove original extension, add .txt
+          const baseName = f.name.replace(/\.[^/.]+$/, '');
+          
+          // Add file to ZIP archive
+          // All processed files are saved as .txt files for consistency
+          zip.file(baseName + '.txt', formatted, { 
+            createFolders: false,           // Don't create folder structure
+            date: new Date(),               // Set file date to current time
+            unixPermissions: 0o644,         // File permissions: rw-r--r-- (read/write for owner, read for others)
+            dosPermissions: null            // No DOS permissions
+          });
+        } catch (e) {
+          // Log error but continue processing other files
+          toast(`Error processing ${f.name}: ${e.message}`);
+        }
+        res(); // Resolve promise to continue to next file
+      };
+      // Start reading file as ArrayBuffer (binary data)
+      fr.readAsArrayBuffer(f);
+    });
+  }
+  
+  // Generate ZIP file as Blob (binary large object)
+  // This creates the actual ZIP archive in memory
+  zipBlob = await zip.generateAsync({ 
+    type: 'blob',                          // Output as Blob for browser download
+    compression: 'DEFLATE',                 // Standard ZIP compression algorithm
+    compressionOptions: { level: 6 }       // Compression level 6 (0-9, 6 is balanced)
+  });
+  
+  // Show download button now that ZIP is ready
+  downloadZipBtn.style.display = 'block';
+  toast('Files processed. Ready to download.');
+});
+
+/**
+ * ZIP Download Handler
+ * 
+ * Triggers download of the generated ZIP file containing all processed files.
+ * Uses browser's download API to save the file.
+ */
+downloadZipBtn.addEventListener('click', () => {
+  // Check if ZIP file is ready
+  if (!zipBlob) {
+    toast('Nothing to download');
+    return;
+  }
+  
+  // Create temporary download link
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(zipBlob); // Create object URL from Blob
+  a.download = 'aes-results.zip';         // Set download filename
+  a.click();                              // Programmatically click to trigger download
+  URL.revokeObjectURL(a.href);            // Clean up object URL to free memory
+  toast('ZIP downloaded');
+});
+
+/**
+ * Keyboard Shortcut Handler
+ * 
+ * Allows users to run encryption/decryption using keyboard shortcut:
+ * - Ctrl+Enter (Windows/Linux)
+ * - Cmd+Enter (Mac)
+ * 
+ * This improves workflow efficiency for power users.
+ */
+document.addEventListener('keydown', (e) => {
+  // Check if Ctrl (Windows/Linux) or Cmd (Mac) + Enter is pressed
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    e.preventDefault(); // Prevent default form submission behavior
+    runText();          // Execute encryption/decryption
+  }
+});
+
+// Load saved config (loads most recent config for current user)
+async function loadSavedConfig() {
+  if (!db) return;
+  
+  try {
+    const userId = getCurrentUserId();
+    const stmt = db.prepare('SELECT * FROM configs WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC LIMIT 1');
+    stmt.bind([userId]);
+    
+    if (stmt.step()) {
+      const config = stmt.getAsObject();
+      if (config.mode) modeEl.value = config.mode;
+      if (config.op) opEl.value = config.op;
+      if (config.key) keyEl.value = config.key;
+      if (config.ctr) ctrEl.value = config.ctr;
+      if (config.iv) ivEl.value = config.iv;
+      if (config.autoHex !== undefined) autoHex.checked = config.autoHex === 1;
+      if (config.outFmt) outFmt.value = config.outFmt;
+      modeEl.dispatchEvent(new Event('change'));
+    }
+    stmt.free();
+  } catch (e) {
+    console.error('Error loading config:', e);
+  }
+}
+
+/**
+ * Page Navigation System
+ * 
+ * Handles switching between different pages/sections of the application.
+ * Implements access control to ensure users are logged in and verified before
+ * accessing protected pages.
+ * 
+ * @param {string} id - Page ID to show: 'login', 'home', 'tour', 'app', 'verification'
+ * 
+ * Page IDs:
+ * - 'login': Login/signup page (public)
+ * - 'verification': Email verification page (public, but requires pending verification)
+ * - 'home': Homepage with feature overview (protected)
+ * - 'tour': "How it works" documentation page (protected)
+ * - 'app': Main encryption/decryption application (protected)
+ * 
+ * Access Control:
+ * - Public pages: login, verification
+ * - Protected pages: home, tour, app (require login)
+ * - Verified pages: home, tour, app (require email verification)
+ * 
+ * Navigation Flow:
+ * 1. Check if user is logged in (for protected pages)
+ * 2. Check if user's email is verified (for protected pages)
+ * 3. Show/hide appropriate sections
+ * 4. Update navigation button active states
+ * 5. Scroll to top if navigating to app page
+ */
+function showPage(id) {
+  // Get current user from localStorage (null if not logged in)
+  const currentUser = localStorage.getItem('aes-current-user');
+  
+  // Access control: Redirect to login if trying to access protected pages without authentication
+  // Public pages: 'login' and 'verification' don't require login
+  if (id !== 'login' && id !== 'verification' && !currentUser) {
+    id = 'login'; // Force redirect to login page
+  }
+  
+  // Email verification check: Ensure user has verified their email before accessing app
+  // This prevents users from using the app with unverified accounts
+  if (id !== 'login' && id !== 'verification' && currentUser && db) {
+    try {
+      const user = JSON.parse(currentUser);
+      // Query database to check verification status
+      const stmt = db.prepare('SELECT email_verified, email FROM users WHERE id = ?');
+      stmt.bind([user.id]);
+      if (stmt.step()) {
+        const userData = stmt.getAsObject();
+        // If email not verified, redirect to verification page
+        if (!userData.email_verified || userData.email_verified === 0) {
+          pendingVerificationUser = user; // Store user for verification process
+          // Update email display in verification page
+          const emailDisplay = document.getElementById('verificationEmailDisplay');
+          if (emailDisplay && userData.email) {
+            emailDisplay.textContent = userData.email;
+          }
+          id = 'verification'; // Force redirect to verification page
+        }
+      }
+      stmt.free();
+    } catch (e) {
+      console.error('Error checking verification status:', e);
+    }
+  }
+  
+  // Hide all sections, then show the requested one
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  
+  // Update navigation button active states (visual feedback for current page)
+  // Only update if user is logged in (navigation is hidden for guests)
+  if (currentUser) {
+    // Remove active class from all nav buttons
+    document.querySelectorAll('.header-nav button').forEach(btn => btn.classList.remove('active'));
+    // Map page IDs to navigation button IDs
+    const navMap = { 'home': 'nav-home', 'tour': 'nav-tour', 'app': 'nav-app' };
+    const activeNav = document.getElementById(navMap[id]);
+    if (activeNav) activeNav.classList.add('active'); // Highlight current page button
+  }
+  
+  // Smooth scroll to top when navigating to app page (for better UX)
+  if (id === 'app') {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
+
+// Login/Signup Functions
+function showLogin() {
+  document.getElementById('loginForm').style.display = 'block';
+  document.getElementById('signupForm').style.display = 'none';
+}
+
+function showSignup() {
+  document.getElementById('loginForm').style.display = 'none';
+  document.getElementById('signupForm').style.display = 'block';
+  // Reset to step 1
+  document.getElementById('signupStep1').style.display = 'block';
+  document.getElementById('signupStep2').style.display = 'none';
+  // Clear form fields
+  document.getElementById('signupName').value = '';
+  document.getElementById('signupEmail').value = '';
+  document.getElementById('signupPassword').value = '';
+  document.getElementById('verificationCode').value = '';
+  // Clear errors
+  const emailErr = document.getElementById('signupEmailErr');
+  if (emailErr) {
+    emailErr.textContent = '';
+    emailErr.classList.remove('show');
+  }
+  showPasswordError([]);
+  pendingSignupData = null;
+}
+
+/**
+ * Handles user login authentication
+ * 
+ * This function:
+ * 1. Validates user input (email and password)
+ * 2. Queries database for matching user credentials
+ * 3. Checks if email is verified
+ * 4. Stores user session in localStorage
+ * 5. Redirects to appropriate page
+ * 
+ * Security Notes:
+ * - Passwords are stored in plaintext (NOT secure - for demo only!)
+ * - In production, passwords should be hashed (e.g., bcrypt, Argon2)
+ * - Email verification is required before accessing the app
+ * 
+ * @returns {void}
+ */
+function handleLogin() {
+  // Get user input from login form
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value.trim();
+  
+  // Validate that both fields are filled
+  if (!email || !password) {
+    toast('Please fill in all fields');
+    return;
+  }
+  
+  // Ensure database is initialized
+  if (!db) {
+    toast('Database not initialized');
+    return;
+  }
+  
+  try {
+    // Query database for user with matching email and password
+    // Note: This is a simple string comparison - NOT secure for production!
+    const stmt = db.prepare('SELECT * FROM users WHERE email = ? AND password = ?');
+    stmt.bind([email, password]);
+    
+    if (stmt.step()) {
+      // User found - get user data
+      const user = stmt.getAsObject();
+      
+      // Check if email is verified (required for app access)
+      if (!user.email_verified || user.email_verified === 0) {
+        stmt.free();
+        toast('Please verify your email first. Check your inbox for the verification code.');
+        // Store user temporarily for verification process
+        pendingVerificationUser = {
+          id: user.id,
+          name: user.name,
+          email: user.email
+        };
+        showPage('verification'); // Redirect to verification page
+        return;
+      }
+      
+      // Email is verified - create user session
+      // Store user info in localStorage (without password for security)
+      const userInfo = {
+        id: user.id,
+        name: user.name,
+        email: user.email
+      };
+      localStorage.setItem('aes-current-user', JSON.stringify(userInfo));
+      toast('Signed in successfully');
+      
+      // Show navigation buttons and redirect to home page
+      const mainNav = document.getElementById('mainNav');
+      if (mainNav) mainNav.style.display = 'flex';
+      showPage('home');
+    } else {
+      // No matching user found
+      toast('Invalid email or password');
+    }
+    stmt.free();
+  } catch (e) {
+    console.error('Error during login:', e);
+    toast('Error during login');
+  }
+}
+
+// Email verification functions
+let pendingVerificationUser = null;
+let pendingSignupData = null; // Store email/name before account creation
+
+// Generate 6-digit verification code
+function generateVerificationCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// Send verification email using EmailJS
+async function sendVerificationEmail(email, name, code) {
+  const serviceId = 'service_2dhdwjp'; // Your Gmail service ID
+  const templateId = 'template_6rh95ly'; // Your email template ID
+  const publicKey = 'SNmRp1NlDIL8hgFmi'; // Your EmailJS public key
+  
+  // Check if EmailJS is loaded
+  if (typeof emailjs === 'undefined') {
+    console.warn('EmailJS library not loaded. Showing code on page.');
+    const codeDisplay = document.getElementById('verificationCodeDisplay');
+    const displayedCode = document.getElementById('displayedCode');
+    if (codeDisplay && displayedCode) {
+      codeDisplay.style.display = 'block';
+      displayedCode.textContent = code;
+    }
+    toast('Email service not available. Code displayed below.');
+    return true;
+  }
+  
+  try {
+    // Send email using EmailJS v4 API
+    const templateParams = {
+      to_email: email,
+      to_name: name,
+      verification_code: code,
+      message: `Your AES Again verification code is: ${code}. This code will expire in 10 minutes.`
+    };
+    
+    console.log('Sending email with params:', templateParams);
+    
+    // EmailJS v4 - send with public key
+    const response = await emailjs.send(serviceId, templateId, templateParams, publicKey);
+    
+    console.log('Email sent successfully:', response);
+    
+    // Hide code display if email was sent successfully
+    const codeDisplay = document.getElementById('verificationCodeDisplay');
+    if (codeDisplay) {
+      codeDisplay.style.display = 'none';
+    }
+    
+    toast('Verification email sent! Check your inbox (and spam folder).');
+    return true;
+    
+  } catch (emailError) {
+    console.error('EmailJS error details:', emailError);
+    console.error('Error code:', emailError?.code);
+    console.error('Error text:', emailError?.text);
+    console.error('Error status:', emailError?.status);
+    
+    // If email fails, show code on page as fallback
+    const codeDisplay = document.getElementById('verificationCodeDisplay');
+    const displayedCode = document.getElementById('displayedCode');
+    if (codeDisplay && displayedCode) {
+      codeDisplay.style.display = 'block';
+      displayedCode.textContent = code;
+    }
+    
+    // Show helpful error message
+    const errorMsg = emailError?.text || emailError?.message || 'Unknown error';
+    toast(`Email sending failed: ${errorMsg}. Code displayed below.`);
+    return true;
+  }
+}
+
+// Password validation function
+function validatePassword(password) {
+  const errors = [];
+  
+  if (password.length < 8) {
+    errors.push('Password must be at least 8 characters long');
+  }
+  
+  if (!/[A-Z]/.test(password)) {
+    errors.push('Password must contain at least one capital letter');
+  }
+  
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    errors.push('Password must contain at least one special character (!@#$%^&*)');
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors: errors
+  };
+}
+
+// Show password validation errors
+function showPasswordError(errors) {
+  const errorEl = document.getElementById('signupPasswordErr');
+  const passwordInput = document.getElementById('signupPassword');
+  
+  if (!errorEl) return;
+  
+  if (errors.length > 0) {
+    errorEl.innerHTML = errors.join('<br>');
+    errorEl.classList.add('show');
+    // Add error styling to input
+    if (passwordInput) {
+      passwordInput.style.borderColor = 'hsl(0, 84%, 60%)';
+    }
+  } else {
+    errorEl.innerHTML = '';
+    errorEl.classList.remove('show');
+    // Remove error styling from input
+    if (passwordInput) {
+      passwordInput.style.borderColor = '';
+    }
+  }
+}
+
+// Step 1: Send email verification code
+async function sendEmailVerification() {
+  const name = document.getElementById('signupName').value.trim();
+  const email = document.getElementById('signupEmail').value.trim();
+  
+  if (!name || !email) {
+    toast('Please fill in all fields');
+    return;
+  }
+  
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    const errEl = document.getElementById('signupEmailErr');
+    if (errEl) {
+      errEl.textContent = 'Please enter a valid email address';
+      errEl.classList.add('show');
+    }
+    toast('Please enter a valid email address');
+    return;
+  }
+  
+  // Clear email error
+  const errEl = document.getElementById('signupEmailErr');
+  if (errEl) {
+    errEl.textContent = '';
+    errEl.classList.remove('show');
+  }
+  
+  if (!db) {
+    toast('Database not initialized');
+    return;
+  }
+  
+  try {
+    // Check if email already exists
+    const checkStmt = db.prepare('SELECT id FROM users WHERE email = ?');
+    checkStmt.bind([email]);
+    if (checkStmt.step()) {
+      checkStmt.free();
+      toast('Email already registered. Please log in instead.');
+      return;
+    }
+    checkStmt.free();
+    
+    // Generate verification code
+    const verificationCode = generateVerificationCode();
+    
+    // Store signup data temporarily (not in database yet)
+    pendingSignupData = {
+      name: name,
+      email: email,
+      verificationCode: verificationCode
+    };
+    
+    // Show verification page and update email display first
+    const emailDisplay = document.getElementById('verificationEmailDisplay');
+    if (emailDisplay) {
+      emailDisplay.textContent = email;
+    }
+    
+    // Hide code display initially (will show only if email fails)
+    const codeDisplay = document.getElementById('verificationCodeDisplay');
+    if (codeDisplay) {
+      codeDisplay.style.display = 'none';
+    }
+    
+    // Send verification email (will show code on page only if email fails)
+    await sendVerificationEmail(email, name, verificationCode);
+    
+    showPage('verification');
+  } catch (e) {
+    console.error('Error sending verification:', e);
+    toast('Error sending verification code');
+  }
+}
+
+// Step 2: Verify email code (after email verification)
+async function verifyEmailForSignup() {
+  const code = document.getElementById('verificationCode').value.trim();
+  
+  if (!code || code.length !== 6) {
+    const errEl = document.getElementById('verificationErr');
+    if (errEl) {
+      errEl.textContent = 'Please enter a valid 6-digit code';
+      errEl.classList.add('show');
+    }
+    toast('Please enter a valid 6-digit code');
+    return;
+  }
+  
+  if (!pendingSignupData) {
+    toast('Verification session expired. Please start over.');
+    showPage('login');
+    showSignup();
+    return;
+  }
+  
+  // Verify the code
+  if (code !== pendingSignupData.verificationCode) {
+    const errEl = document.getElementById('verificationErr');
+    if (errEl) {
+      errEl.textContent = 'Invalid verification code. Please try again.';
+      errEl.classList.add('show');
+    }
+    toast('Invalid verification code');
+    return;
+  }
+  
+  // Code is correct! Show password step
+  const errEl = document.getElementById('verificationErr');
+  if (errEl) {
+    errEl.textContent = '';
+    errEl.classList.remove('show');
+  }
+  
+  // Hide verification page, show signup step 2
+  document.getElementById('signupStep1').style.display = 'none';
+  document.getElementById('signupStep2').style.display = 'block';
+  showPage('login'); // Go back to login page but show signup form with step 2
+  document.getElementById('signupForm').style.display = 'block';
+  document.getElementById('loginForm').style.display = 'none';
+  
+  toast('Email verified! Now set your password.');
+}
+
+// Step 3: Complete signup with password
+async function completeSignup() {
+  if (!pendingSignupData) {
+    toast('Session expired. Please start over.');
+    showPage('login');
+    showSignup();
+    return;
+  }
+  
+  const password = document.getElementById('signupPassword').value.trim();
+  
+  if (!password) {
+    toast('Please enter a password');
+    return;
+  }
+  
+  // Validate password
+  const passwordValidation = validatePassword(password);
+  if (!passwordValidation.isValid) {
+    showPasswordError(passwordValidation.errors);
+    toast('Please fix password requirements');
+    return;
+  }
+  
+  // Clear any previous errors
+  showPasswordError([]);
+  
+  if (!db) {
+    toast('Database not initialized');
+    return;
+  }
+  
+  try {
+    // Create the account (email is already verified)
+    const insertStmt = db.prepare('INSERT INTO users (name, email, password, email_verified, verification_code, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+    insertStmt.run([pendingSignupData.name, pendingSignupData.email, password, 1, null, Date.now()]);
+    insertStmt.free();
+    saveDatabaseToIndexedDB();
+    
+    // Get the newly created user
+    const getUserStmt = db.prepare('SELECT id, name, email FROM users WHERE email = ?');
+    getUserStmt.bind([pendingSignupData.email]);
+    if (getUserStmt.step()) {
+      const newUser = getUserStmt.getAsObject();
+      // Log the user in
+      localStorage.setItem('aes-current-user', JSON.stringify(newUser));
+      
+      // Reset signup form
+      document.getElementById('signupStep1').style.display = 'block';
+      document.getElementById('signupStep2').style.display = 'none';
+      document.getElementById('signupName').value = '';
+      document.getElementById('signupEmail').value = '';
+      document.getElementById('signupPassword').value = '';
+      document.getElementById('verificationCode').value = '';
+      pendingSignupData = null;
+      
+      toast('Account created successfully!');
+      const mainNav = document.getElementById('mainNav');
+      if (mainNav) mainNav.style.display = 'flex';
+      showPage('home');
+    }
+    getUserStmt.free();
+  } catch (e) {
+    console.error('Error creating account:', e);
+    toast('Error creating account');
+  }
+}
+
+function handleLogout() {
+  localStorage.removeItem('aes-current-user');
+  pendingVerificationUser = null;
+  const mainNav = document.getElementById('mainNav');
+  if (mainNav) mainNav.style.display = 'none';
+  showPage('login');
+  toast('Logged out successfully');
+}
+
+// Initialize database and check if user is logged in on page load
+(async function() {
+  await initDatabase();
+  
+  // Load saved data after database is ready
+  if (db) {
+    loadSavedKeys();
+    loadSavedCtrs();
+    await loadSavedConfig();
+  }
+  
+  const currentUser = localStorage.getItem('aes-current-user');
+  if (currentUser) {
+    try {
+      const user = JSON.parse(currentUser);
+      // Check if user is verified
+      if (db) {
+        const stmt = db.prepare('SELECT email_verified FROM users WHERE id = ?');
+        stmt.bind([user.id]);
+        if (stmt.step()) {
+          const userData = stmt.getAsObject();
+          if (!userData.email_verified || userData.email_verified === 0) {
+            // User not verified, show verification page
+            pendingVerificationUser = user;
+            showPage('verification');
+            stmt.free();
+            return;
+          }
+        }
+        stmt.free();
+      }
+      // User is logged in and verified, show navigation and go to home
+      const mainNav = document.getElementById('mainNav');
+      if (mainNav) mainNav.style.display = 'flex';
+      showPage('home');
+    } catch (e) {
+      // Invalid user data, show login
+      showPage('login');
+    }
+  } else {
+    // No user logged in, show login page
+    showPage('login');
+  }
+})();
+
+// Add Enter key support for verification code
+const verificationCodeInput = document.getElementById('verificationCode');
+if (verificationCodeInput) {
+  verificationCodeInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      // Check if it's signup verification or login verification
+      if (pendingSignupData) {
+        verifyEmailForSignup();
+      } else {
+        verifyEmail();
+      }
+    }
+  });
+}
+
+// Verify email with code (for existing users who need to verify)
+async function verifyEmail() {
+  const code = document.getElementById('verificationCode').value.trim();
+  
+  if (!code || code.length !== 6) {
+    const errEl = document.getElementById('verificationErr');
+    if (errEl) {
+      errEl.textContent = 'Please enter a valid 6-digit code';
+      errEl.classList.add('show');
+    }
+    toast('Please enter a valid 6-digit code');
+    return;
+  }
+  
+  if (!db || !pendingVerificationUser) {
+    toast('Verification session expired. Please sign up again.');
+    showPage('login');
+    return;
+  }
+  
+  try {
+    const stmt = db.prepare('SELECT * FROM users WHERE email = ? AND verification_code = ?');
+    stmt.bind([pendingVerificationUser.email, code]);
+    
+    if (stmt.step()) {
+      const user = stmt.getAsObject();
+      // Mark email as verified
+      const updateStmt = db.prepare('UPDATE users SET email_verified = 1, verification_code = NULL WHERE id = ?');
+      updateStmt.run([user.id]);
+      updateStmt.free();
+      saveDatabaseToIndexedDB();
+      
+      // Log the user in
+      const userInfo = {
+        id: user.id,
+        name: user.name,
+        email: user.email
+      };
+      localStorage.setItem('aes-current-user', JSON.stringify(userInfo));
+      pendingVerificationUser = null;
+      
+      toast('Email verified successfully!');
+      const mainNav = document.getElementById('mainNav');
+      if (mainNav) mainNav.style.display = 'flex';
+      showPage('home');
+    } else {
+      const errEl = document.getElementById('verificationErr');
+      if (errEl) {
+        errEl.textContent = 'Invalid verification code. Please try again.';
+        errEl.classList.add('show');
+      }
+      toast('Invalid verification code');
+    }
+    stmt.free();
+  } catch (e) {
+    console.error('Error verifying email:', e);
+    toast('Error verifying email');
+  }
+}
+
+// Resend verification code
+async function resendVerificationCode() {
+  // Check if it's for signup or login verification
+  if (pendingSignupData) {
+    // Resend for signup
+    const newCode = generateVerificationCode();
+    pendingSignupData.verificationCode = newCode;
+    await sendVerificationEmail(pendingSignupData.email, pendingSignupData.name, newCode);
+    
+    // Update displayed code if shown
+    const displayedCode = document.getElementById('displayedCode');
+    if (displayedCode) {
+      displayedCode.textContent = newCode;
+    }
+    
+    const errEl = document.getElementById('verificationErr');
+    if (errEl) {
+      errEl.textContent = '';
+      errEl.classList.remove('show');
+    }
+    toast('New verification code sent!');
+  } else if (pendingVerificationUser && db) {
+    // Resend for existing user (login verification)
+    try {
+      const newCode = generateVerificationCode();
+      const updateStmt = db.prepare('UPDATE users SET verification_code = ? WHERE email = ?');
+      updateStmt.run([newCode, pendingVerificationUser.email]);
+      updateStmt.free();
+      saveDatabaseToIndexedDB();
+      
+      await sendVerificationEmail(pendingVerificationUser.email, pendingVerificationUser.name, newCode);
+      
+      const errEl = document.getElementById('verificationErr');
+      if (errEl) {
+        errEl.textContent = '';
+        errEl.classList.remove('show');
+      }
+      toast('New verification code sent!');
+    } catch (e) {
+      console.error('Error resending code:', e);
+      toast('Error resending verification code');
+    }
+  } else {
+    toast('No pending verification. Please sign up again.');
+    showPage('login');
+  }
+}
+
+// Dark Mode Toggle
+function toggleDarkMode() {
+  const html = document.documentElement;
+  const currentTheme = html.getAttribute('data-theme');
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', newTheme);
+  localStorage.setItem('aes-theme', newTheme);
+  
+  const themeToggle = document.getElementById('themeToggle');
+  themeToggle.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+}
+
+// Load saved theme
+const savedTheme = localStorage.getItem('aes-theme') || 'light';
+document.documentElement.setAttribute('data-theme', savedTheme);
+document.getElementById('themeToggle').textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+
+// Initialize
+modeEl.dispatchEvent(new Event('change'));
+
+// Initialize buttons as disabled
+if (copyBtnBottom) copyBtnBottom.disabled = true;
+if (downloadPdfBtnBottom) downloadPdfBtnBottom.disabled = true;
+
+// Real-time password validation
+const signupPasswordEl = document.getElementById('signupPassword');
+if (signupPasswordEl) {
+  signupPasswordEl.addEventListener('input', (e) => {
+    const password = e.target.value;
+    if (password.length > 0) {
+      const validation = validatePassword(password);
+      showPasswordError(validation.errors);
+    } else {
+      showPasswordError([]);
+    }
+  });
+  
+  // Also validate on blur
+  signupPasswordEl.addEventListener('blur', (e) => {
+    const password = e.target.value;
+    if (password.length > 0) {
+      const validation = validatePassword(password);
+      showPasswordError(validation.errors);
+    }
+  });
+}
+
+// Page initialization is handled by the login check above
+</script>
+</body>
+</html>
+
